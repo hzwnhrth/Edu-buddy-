@@ -1,11 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { checkIpLimit, LimitError } from "@/lib/limits";
+import { authenticateRequest, AuthError, type AuthenticatedUser, type UserRole } from "@/lib/auth";
 import { getStore } from "@/lib/store";
 import type { Store } from "@/lib/store/types";
 import type { Profile } from "@/lib/types";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Thrown for any request that fails validation; withProfile turns this into
 // a 400 response carrying the message as a readable explanation.
@@ -21,6 +20,7 @@ interface RouteContext<Params extends RouteParams> {
 export interface HandlerArgs<Params extends RouteParams = RouteParams> {
   request: NextRequest;
   profile: Profile;
+  identity: AuthenticatedUser;
   store: Store;
   params: Params;
 }
@@ -29,40 +29,33 @@ export type RouteHandler<Params extends RouteParams = RouteParams> = (
   args: HandlerArgs<Params>
 ) => Promise<Response> | Response;
 
-// Wraps an App Router route handler with the shared request pipeline: reads
-// and validates the x-profile-id header, applies the per-IP rate limit from
-// limits.ts, loads (or creates) the profile, then calls handler(). A
-// LimitError becomes 429, a BadRequestError (typically from parseBody)
-// becomes 400, and any other thrown error becomes a 500 with the real error
-// logged to the server console instead of leaked to the client.
+// Wraps an App Router route handler with the shared request pipeline. The
+// Firebase ID token is verified before its UID is used as the profile ID.
 export function withProfile<Params extends RouteParams = RouteParams>(
   handler: RouteHandler<Params>
 ) {
   return async (request: NextRequest, context?: RouteContext<Params>): Promise<Response> => {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
     try {
-      const profileId = request.headers.get("x-profile-id") ?? "";
-      if (!UUID_RE.test(profileId)) {
-        return jsonError(400, "Missing or invalid profile id");
-      }
-
       checkIpLimit(ip);
 
+      const identity = await authenticateRequest(request.headers.get("authorization"));
       const store = getStore();
-      let profile = await store.getOrCreateProfile(profileId);
+      let profile = await store.getOrCreateProfile(identity.uid);
       const params = context ? await context.params : ({} as Params);
 
-      // Opportunistic name sync: browsers may send the signed-in user's
-      // name on any request; storing it keeps the teacher's classroom view
-      // friendly without a separate update endpoint.
-      const displayName = request.headers.get("x-display-name")?.trim().slice(0, 80) || null;
+      // The name comes from Firebase's verified token, never a browser header.
+      const displayName = identity.displayName?.trim().slice(0, 80) || null;
       if (displayName && displayName !== profile.displayName) {
-        await store.updateProfile(profileId, { displayName });
+        await store.updateProfile(identity.uid, { displayName });
         profile = { ...profile, displayName };
       }
 
-      return await handler({ request, profile, store, params });
+      return await handler({ request, profile, identity, store, params });
     } catch (error) {
+      if (error instanceof AuthError) {
+        return jsonError(error.status, error.message);
+      }
       if (error instanceof LimitError) {
         console.warn(`rate limit reached for ip "${ip}": ${error.message}`);
         return jsonError(429, error.message);
@@ -74,6 +67,20 @@ export function withProfile<Params extends RouteParams = RouteParams>(
       return jsonError(500, "Something went wrong");
     }
   };
+}
+
+// Role claims are assigned only through the Firebase Admin SDK. This keeps
+// teacher and admin access out of browser-controlled signup state.
+export function withRole<Params extends RouteParams = RouteParams>(
+  role: UserRole,
+  handler: RouteHandler<Params>
+) {
+  return withProfile(async (args) => {
+    if (args.identity.role !== role) {
+      return jsonError(403, "You do not have permission to access this resource");
+    }
+    return handler(args);
+  });
 }
 
 // Reads and validates a JSON request body against a zod schema. Throws

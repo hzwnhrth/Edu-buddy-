@@ -1,14 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
-import { HiOutlineUser, HiOutlineEnvelope, HiOutlineLockClosed, HiOutlineEye, HiOutlineEyeSlash, HiOutlineAcademicCap, HiOutlineBuildingLibrary, HiOutlineArrowRight, HiOutlineSparkles } from 'react-icons/hi2';
-
-const roles = [
-  { key: 'student', label: 'Student', icon: HiOutlineUser, color: '#16A34A', bg: '#DCFCE7' },
-  { key: 'teacher', label: 'Teacher', icon: HiOutlineAcademicCap, color: '#2563EB', bg: '#DBEAFE' },
-  { key: 'admin', label: 'Admin', icon: HiOutlineBuildingLibrary, color: '#7C3AED', bg: '#EDE9FE' },
-];
+import { HiOutlineUser, HiOutlineEnvelope, HiOutlineLockClosed, HiOutlineEye, HiOutlineEyeSlash, HiOutlineArrowRight } from 'react-icons/hi2';
 
 const homeForRole = { student: '/dashboard', teacher: '/teacher-dashboard', admin: '/admin-dashboard' };
 
@@ -29,8 +23,7 @@ function passwordStrength(pw) {
 /**
  * Auth Component
  * Combined Login / Signup screen. Follows the app's Neo-Minimalist theme:
- * centered card, dotted backdrop, green primary action. Mock authentication
- * backed by localStorage - same shape a real auth API will replace later.
+ * centered card, dotted backdrop, and Firebase email/password authentication.
  */
 export default function Auth() {
   const location = useLocation();
@@ -41,7 +34,6 @@ export default function Auth() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('student');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,20 +51,18 @@ export default function Auth() {
     setLoading(true);
     try {
       if (isSignup) {
-        const result = signup({ name: name.trim(), email: email.trim().toLowerCase(), password, role });
-        if (result?.error) {
-          setError(result.error);
-          return;
-        }
-        navigate(homeForRole[role] || '/dashboard', { replace: true });
+        const user = await signup({ name: name.trim(), email: email.trim().toLowerCase(), password });
+        navigate(homeForRole[user.role] || '/dashboard', { replace: true });
       } else {
-        const user = login(email.trim().toLowerCase(), password);
+        const user = await login(email.trim().toLowerCase(), password);
         if (!user) {
           setError('Wrong email or password. Try again, or create a new account.');
           return;
         }
         navigate(homeForRole[user.role] || '/dashboard', { replace: true });
       }
+    } catch (cause) {
+      setError(cause.message || 'Unable to authenticate. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -114,36 +104,6 @@ export default function Auth() {
         <p style={{ textAlign: 'center', color: '#6B7280', fontSize: '0.9rem', marginBottom: '1.75rem' }}>
           {isSignup ? 'Join your classroom in one minute' : 'Log in to continue your study journey'}
         </p>
-
-        {/* Role picker (signup only) */}
-        {isSignup && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} style={{ marginBottom: '1.25rem', overflow: 'hidden' }}>
-            <p style={{ fontSize: '0.78rem', fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.5rem' }}>I am a</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-              {roles.map(r => {
-                const selected = role === r.key;
-                return (
-                  <button
-                    key={r.key}
-                    type="button"
-                    onClick={() => setRole(r.key)}
-                    style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem',
-                      padding: '0.7rem 0.4rem', borderRadius: '12px', cursor: 'pointer', fontFamily: 'inherit',
-                      border: selected ? `2px solid ${r.color}` : '2px solid #E5E7EB',
-                      background: selected ? r.bg : '#FFFFFF',
-                      color: selected ? r.color : '#6B7280',
-                      fontSize: '0.78rem', fontWeight: 700, transition: '0.15s ease',
-                    }}
-                  >
-                    <r.icon style={{ fontSize: '1.15rem' }} />
-                    {r.label}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           {isSignup && (
@@ -214,12 +174,6 @@ export default function Auth() {
           </Link>
         </p>
 
-        {/* Guest escape hatch - demo-friendly */}
-        <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
-          <Link to="/dashboard" style={{ fontSize: '0.82rem', color: '#9CA3AF', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-            <HiOutlineSparkles /> Continue as guest
-          </Link>
-        </div>
       </motion.div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { jsonOk, withProfile } from "@/lib/api";
+import { jsonOk, withRole } from "@/lib/api";
 
 // GET /api/teacher/classroom: the class roster for the Teacher Dashboard's
 // Classroom View. One entry per profile (student) with real mastery data:
@@ -35,7 +35,7 @@ function relativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
-export const GET = withProfile(async ({ store }) => {
+export const GET = withRole("teacher", async ({ store }) => {
   const profileIds = await store.listProfileIds();
 
   const students: ClassroomStudent[] = [];

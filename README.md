@@ -113,8 +113,6 @@ Vercel's free tier is enough to run the app, as are the free tiers of OpenRouter
 
 ## Team preview frontend and extra APIs
 
-The repository also contains the teammates' preview frontend in the `frontend/` folder. It is a separate Vite React app with its own `package.json`, so it runs independently of the main app, and it includes teacher, admin and sign-in screens that are not part of the main app's no-login flow.
+The repository also contains the teammates' preview frontend in the `frontend/` folder. It is a separate Vite React app with its own `package.json`, so it runs independently of the main app, and it now has a working Firebase email/password sign-in. It reads `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID` and `VITE_FIREBASE_APP_ID` from `frontend/.env.local` and sends the resulting ID token as a Bearer token on every API call.
 
-Two additional Next.js API routes came with the same merge: `GET /api/teacher/classroom` and `GET /api/admin/overview`. They aggregate live data from the store and have no mock fallback.
-
-The main EduBuddy app and its flow are unchanged.
+The server verifies that token with the Firebase Admin SDK, using the same `FIREBASE_SERVICE_ACCOUNT_JSON` documented above. Every API route except `GET /api/status` now requires a valid signed-in user and answers 401 without one, or 503 when `FIREBASE_SERVICE_ACCOUNT_JSON` is not set, so the main app's no-login guest flow no longer reaches the API. `GET /api/teacher/classroom` and `GET /api/admin/overview` additionally require the matching `teacher` or `admin` role custom claim (403 otherwise), aggregate live data from the store, and have no mock fallback. Roles are assigned only through the Admin SDK, with `node scripts/promote-role.mjs <email> <teacher|admin>`, and new signups default to the `student` role.
