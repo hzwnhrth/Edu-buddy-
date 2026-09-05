@@ -1,4 +1,4 @@
-import { jsonOk, withProfile } from "@/lib/api";
+import { jsonOk, withRole } from "@/lib/api";
 
 // GET /api/admin/overview: school-wide analytics for the Admin Dashboard.
 // Aggregates real data across every profile in the store: student count,
@@ -17,7 +17,7 @@ interface AdminAlert {
   studentsAffected: number;
 }
 
-export const GET = withProfile(async ({ store }) => {
+export const GET = withRole("admin", async ({ store }) => {
   const profileIds = await store.listProfileIds();
 
   let attemptCount = 0;

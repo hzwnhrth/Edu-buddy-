@@ -77,15 +77,27 @@ Navigate to **[http://localhost:5173](http://localhost:5173)** in your browser!
 ---
 
 ## 🔑 Environment Variables
-To get the full AI experience, you need a free Google Gemini API Key.
-Place these in the `.env.local` file in the root directory:
+Authentication uses Firebase Authentication with email/password accounts.
+
+1. In Firebase Console, enable **Authentication > Sign-in method > Email/Password**.
+2. Copy `frontend/.env.example` to `frontend/.env.local` and fill in your Firebase Web App configuration.
+3. Copy `.env.example` to `.env.local` and set `FIREBASE_SERVICE_ACCOUNT_JSON` for the Next.js API server.
+
+All public signups receive the `student` role. Teacher and admin access is assigned only with Firebase custom claims, never from the browser. To promote an existing user, run this from the repository root with `FIREBASE_SERVICE_ACCOUNT_JSON` available:
+
+```bash
+node scripts/promote-role.mjs teacher@example.edu teacher
+node scripts/promote-role.mjs admin@example.edu admin
+```
+
+Promoted users must sign out and sign back in before their new role is available.
+
+The existing AI and database settings belong in the root `.env.local` as well:
 
 ```env
-# Get this from https://aistudio.google.com/apikey
-GEMINI_API_KEY=your_gemini_api_key
-
-# (Optional) For data persistence. If empty, uses in-memory mock storage.
+# Server-only credential. Do not add this to frontend/.env.local.
 FIREBASE_SERVICE_ACCOUNT_JSON=
+FIREBASE_DATABASE_URL=
 ```
 
 > **Note:** If you don't provide a Gemini API key, the app will automatically fall back to **Mock AI Mode**, returning hardcoded responses so you can still test the UI!

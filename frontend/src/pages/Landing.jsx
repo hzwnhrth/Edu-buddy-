@@ -114,9 +114,9 @@ export default function Landing() {
               whileTap={{ scale: 0.97 }}
               className="btn btn-secondary"
               style={{ padding: '0.85rem 2rem', fontSize: '1rem', borderRadius: '9999px' }}
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/login')}
             >
-              Browse Study Materials
+              Sign In
             </motion.button>
           </motion.div>
         </div>
