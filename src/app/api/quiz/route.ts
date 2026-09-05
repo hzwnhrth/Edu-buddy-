@@ -23,7 +23,8 @@ function usedTopicIds(pool: Topic[], questions: Question[]): string[] {
 }
 
 // Generates a quiz over one or more topics of a material and stores it.
-// Returns the quiz with its answer key stripped out.
+// Returns the quiz with its answer key included (the Quiz screen reveals it
+// client-side); grading stays server-side in /api/attempt.
 export const POST = withProfile(async ({ request, profile, store }) => {
   const body = await parseBody(request, quizRequestSchema);
 

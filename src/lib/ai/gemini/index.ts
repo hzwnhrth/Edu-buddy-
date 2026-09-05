@@ -1,26 +1,39 @@
 import type { Part } from "@google/genai";
-import type { Question, Topic } from "@/lib/types";
+import type { MaterialNotes, Question, Topic } from "@/lib/types";
 import { generateJson, resolveModel } from "@/lib/ai/gemini/client";
 import {
+  buildChatTutorPrompt,
   buildExplainTopicPrompt,
   buildExtractTopicsFromPdfPrompt,
   buildExtractTopicsPrompt,
   buildGenerateFeedbackPrompt,
+  buildGenerateNotesPrompt,
   buildGenerateQuizPrompt,
   type FeedbackPromptTopic,
 } from "@/lib/ai/gemini/prompts";
-import { explanationSchema, feedbackSchema, pdfTopicsSchema, quizSchema, topicsSchema } from "@/lib/ai/schemas";
+import {
+  chatSchema,
+  explanationSchema,
+  feedbackSchema,
+  notesSchema,
+  pdfTopicsSchema,
+  quizSchema,
+  topicsSchema,
+} from "@/lib/ai/schemas";
 import { splitIntoChunks, uniqueTopicIds } from "@/lib/ai/text";
 import {
   AiError,
   type AiClient,
   type AiDescription,
+  type ChatTutorInput,
+  type ChatTutorOutput,
   type ExplainTopicInput,
   type ExplainTopicOutput,
   type ExtractTopicsFromPdfInput,
   type ExtractTopicsFromPdfOutput,
   type ExtractTopicsInput,
   type GenerateFeedbackInput,
+  type GenerateNotesInput,
   type GenerateQuizInput,
 } from "@/lib/ai/types";
 
@@ -176,6 +189,35 @@ export class GeminiAi implements AiClient {
     }));
 
     return { text: payload.text, topics };
+  }
+
+  async generateNotes(input: GenerateNotesInput): Promise<MaterialNotes> {
+    const { title, topics, chunks } = input;
+    if (topics.length === 0) {
+      throw new AiError("No topics were given to build notes from.");
+    }
+
+    const prompt = buildGenerateNotesPrompt({
+      title,
+      notesText: chunks.join("\n\n"),
+      topics: topics.map((topic) => ({
+        name: topic.name,
+        summary: topic.summary,
+        keyPoints: topic.keyPoints,
+      })),
+    });
+
+    return generateJson({ prompt, schema: notesSchema });
+  }
+
+  async chatTutor(input: ChatTutorInput): Promise<ChatTutorOutput> {
+    const prompt = buildChatTutorPrompt({
+      message: input.message,
+      contextText: input.contextText,
+      history: input.history,
+    });
+
+    return generateJson({ prompt, schema: chatSchema });
   }
 
   async describe(): Promise<AiDescription> {

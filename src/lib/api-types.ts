@@ -1,7 +1,10 @@
 import type {
   Attempt,
+  ChatMessage,
   Difficulty,
+  Flashcard,
   Material,
+  MaterialNotes,
   PublicQuestion,
   RuntimeStatus,
   TopicProgress,
@@ -137,6 +140,34 @@ export interface MeResponse {
 
 // GET /api/status: which backends are live. No profile header needed.
 export type StatusResponse = RuntimeStatus;
+
+// POST /api/notes: study notes for one material, cached on the material
+// until refresh asks for them again. The notes body is the cached
+// MaterialNotes without its flashcards, which travel as their own field.
+export interface NotesRequest {
+  materialId: string;
+  refresh?: boolean;
+}
+export interface NotesResponse {
+  notes: Omit<MaterialNotes, "flashcards">;
+  flashcards: Flashcard[];
+  cached: boolean;
+}
+
+// POST /api/chat: one AI tutor reply. history is the caller's last 10
+// messages; GET /api/chat returns the profile's stored history instead.
+export interface ChatRequest {
+  message: string;
+  materialId?: string;
+  history: ChatMessage[];
+}
+export interface ChatResponse {
+  reply: string;
+  suggestions: string[];
+}
+export interface ChatHistoryResponse {
+  messages: ChatMessage[];
+}
 
 // Shape of every non-2xx response.
 export interface ApiErrorResponse {

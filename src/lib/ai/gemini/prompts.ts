@@ -1,6 +1,6 @@
 import type { Difficulty } from "@/lib/types";
 
-// Plain-English prompt builders for the four AI jobs. Every prompt states,
+// Plain-English prompt builders for the AI jobs. Every prompt states,
 // in some form: you are helping a university student study, use only the
 // notes given, keep language simple and clear, answer with JSON matching
 // the schema and nothing else, and no markdown in the answer.
@@ -196,6 +196,98 @@ export function buildGenerateFeedbackPrompt(
     topicLines,
     "",
     "Write feedback as 80 to 150 words covering: what the student is doing well, what is weak, and the next two concrete things they should do. Be friendly and direct, do not pad it with filler, and do not repeat the raw numbers back verbatim, describe them in words.",
+    "",
+    OUTPUT_LINE,
+  ].join("\n");
+}
+
+// generateNotes: a full set of study notes written only from the material,
+// reusing the already-extracted topics as the skeleton so the notes, the
+// Topics screen and the quizzes all speak about the same things.
+export interface NotesPromptTopic {
+  name: string;
+  summary: string;
+  keyPoints: string[];
+}
+
+export function buildGenerateNotesPrompt(args: {
+  title: string;
+  notesText: string;
+  topics: NotesPromptTopic[];
+}): string {
+  const { title, notesText, topics } = args;
+
+  const topicList = topics
+    .map((topic) => `- ${topic.name}: ${topic.summary} Key points: ${topic.keyPoints.join("; ")}`)
+    .join("\n");
+
+  return [
+    ROLE_LINE,
+    GROUNDING_LINE,
+    LANGUAGE_LINE,
+    "",
+    `Write a complete set of study notes for the material "${title}". Cover the whole material from start to end, following the order of the topics listed below, and add nothing that is not in the notes.`,
+    "",
+    "The topics already extracted from these notes are:",
+    topicList,
+    "",
+    "Give:",
+    "- title: the material title given above, as a short string",
+    "- sections: between 4 and 8 sections that together cover the whole material in order. Each section has a heading (a short phrase, usually one of the topic names) and a body of 80 to 200 words of plain, flowing prose (not bullet points) that teaches that part of the material.",
+    "- summary: 40 to 80 words summing up the whole material in plain language",
+    "- keyPoints: 5 to 8 short factual takeaways, each one actually stated in the notes",
+    "- flashcards: 6 to 10 flashcards. Each has front (a short question about one specific fact in the notes) and back (the short answer, also from the notes).",
+    "",
+    withNotes(title, notesText),
+    "",
+    OUTPUT_LINE,
+  ].join("\n");
+}
+
+// chatTutor: one tutor turn. When the student has a material open, the
+// conversation is grounded in that material's text; otherwise the tutor
+// gives general study help without inventing material content.
+export interface ChatPromptHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export function buildChatTutorPrompt(args: {
+  message: string;
+  contextText?: string;
+  history: ChatPromptHistoryMessage[];
+}): string {
+  const { message, contextText, history } = args;
+
+  const historyLines =
+    history.length > 0
+      ? [
+          "Conversation so far, oldest first (Student lines are the student, You lines are your earlier replies):",
+          ...history.map((entry) => (entry.role === "user" ? `Student: ${entry.content}` : `You: ${entry.content}`)),
+        ]
+      : ["This is the first message of the conversation."];
+
+  const grounding = contextText
+    ? [
+        "The student is currently studying the notes below. Answer their message from those notes whenever they contain the answer, and say so when they do not.",
+        "",
+        withNotes(null, contextText),
+      ]
+    : [
+        "No notes are open right now, so answer as general study help. Do not invent or describe any specific study material.",
+      ];
+
+  return [
+    "You are the student's AI tutor, helping a university student study from their own lecture notes.",
+    LANGUAGE_LINE,
+    "",
+    ...grounding,
+    "",
+    ...historyLines,
+    "",
+    `The student's latest message is: ${message}`,
+    "",
+    "Reply in 40 to 150 words of simple, clear, encouraging language that a first-year student can follow on a first read. Then give suggestions: between 0 and 3 short follow-up questions the student might realistically ask next, each at most a dozen or so words.",
     "",
     OUTPUT_LINE,
   ].join("\n");

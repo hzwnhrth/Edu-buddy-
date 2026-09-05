@@ -58,6 +58,46 @@ export const pdfTopicsSchema = z.object({
 });
 export type PdfTopicsPayload = z.infer<typeof pdfTopicsSchema>;
 
+// The study-notes job: 4 to 8 sections with a heading and a plain-language
+// body each, a summary, 5 to 8 key points and 6 to 10 flashcards, all
+// written only from the notes. The character limits approximate the spec's
+// word limits (section bodies of 80 to 200 words, a 40 to 80 word summary)
+// and are deliberately generous, since Gemini does not enforce string
+// lengths in structured output; the app validates with these schemas and
+// the mock builds well inside them.
+export const notesSchema = z.object({
+  title: z.string().min(1).max(160),
+  sections: z
+    .array(
+      z.object({
+        heading: z.string().min(1).max(160),
+        content: z.string().min(300).max(2000),
+      })
+    )
+    .min(4)
+    .max(8),
+  summary: z.string().min(150).max(800),
+  keyPoints: z.array(z.string().min(3).max(240)).min(5).max(8),
+  flashcards: z
+    .array(
+      z.object({
+        front: z.string().min(3).max(300),
+        back: z.string().min(1).max(400),
+      })
+    )
+    .min(6)
+    .max(10),
+});
+export type NotesPayload = z.infer<typeof notesSchema>;
+
+// The chat tutor job: one plain-language reply (40 to 150 words, so roughly
+// 100 to 1600 characters) plus 0 to 3 short follow-up suggestions.
+export const chatSchema = z.object({
+  reply: z.string().min(100).max(1600),
+  suggestions: z.array(z.string().min(1).max(200)).max(3),
+});
+export type ChatPayload = z.infer<typeof chatSchema>;
+
 // zod 4 ships JSON Schema conversion built in as z.toJSONSchema(schema, params?),
 // exported from node_modules/zod/v4/core/json-schema-processors.d.ts and
 // re-exported through node_modules/zod/v4/classic/external.d.ts and the

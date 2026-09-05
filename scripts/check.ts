@@ -3,6 +3,7 @@ import { z } from "zod";
 import { generateJson, resolveModel } from "@/lib/ai/gemini/client";
 import { getEnv } from "@/lib/env";
 import { getStore } from "@/lib/store";
+import { getRtdb } from "@/lib/store/chat";
 
 // Verifies both optional secrets against the real services they configure,
 // and prints the model Gemini would use. Safe to run with neither secret
@@ -10,7 +11,8 @@ import { getStore } from "@/lib/store";
 // useful in plain mock-and-memory mode too. Exits 1 only if something that
 // IS configured turns out not to work. Nothing this script does is ever
 // deleted: the Firestore check only writes and reads back one fixed
-// document, overwritten on every run.
+// document, and the Realtime Database check only writes and reads back one
+// fixed path, both simply overwritten on every run.
 
 type Result = "OK" | "FAIL" | "SKIPPED";
 
@@ -112,12 +114,48 @@ async function checkFirestoreReachable(hasJson: boolean): Promise<void> {
   }
 }
 
+// 5. Realtime Database reachable: only checked when BOTH the service
+// account and FIREBASE_DATABASE_URL are set, since that is exactly the
+// combination under which chat history uses it. Writes { checkedAt, by } to
+// the fixed path _health/check and reads the value straight back; the write
+// overwrites whatever the last run left, and nothing is ever deleted.
+// getRtdb() (src/lib/store/chat.ts) owns the admin app initialisation and
+// the URL wiring, so this exercises the same path /api/chat uses.
+async function checkRtdbReachable(hasJson: boolean): Promise<void> {
+  const url = getEnv().firebaseDatabaseUrl;
+  if (!hasJson || !url) {
+    report(
+      "Realtime Database reachable",
+      "SKIPPED",
+      !url
+        ? "FIREBASE_DATABASE_URL not set, chat history uses the in-memory store"
+        : "FIREBASE_SERVICE_ACCOUNT_JSON not set or invalid"
+    );
+    return;
+  }
+  try {
+    const db = getRtdb();
+    const checkedAt = new Date().toISOString();
+    const ref = db.ref("_health/check");
+    await ref.set({ checkedAt, by: "npm run check" });
+
+    const snap = await ref.get();
+    if (snap.val()?.checkedAt !== checkedAt) {
+      throw new Error("checkedAt did not read back with the value just written");
+    }
+    report("Realtime Database reachable", "OK");
+  } catch (error) {
+    report("Realtime Database reachable", "FAIL", messageOf(error));
+  }
+}
+
 async function main(): Promise<void> {
   const hasKey = checkGeminiKeyPresent();
   await checkGeminiReachable(hasKey);
 
   const hasJson = checkFirebaseJsonPresent();
   await checkFirestoreReachable(hasJson);
+  await checkRtdbReachable(hasJson);
 
   process.exit(hasFailure ? 1 : 0);
 }

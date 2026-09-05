@@ -1,4 +1,12 @@
-import type { Difficulty, Material, Question, Topic, TopicProgress } from "@/lib/types";
+import type {
+  ChatMessage,
+  Difficulty,
+  Material,
+  MaterialNotes,
+  Question,
+  Topic,
+  TopicProgress,
+} from "@/lib/types";
 
 // Input for turning raw notes into topics.
 export interface ExtractTopicsInput {
@@ -47,6 +55,28 @@ export interface ExtractTopicsFromPdfOutput {
   topics: Topic[];
 }
 
+// Input for writing a full set of study notes from one material.
+export interface GenerateNotesInput {
+  title: string;
+  topics: Topic[];
+  chunks: string[];
+}
+
+// Input for one tutor turn. contextText is the active material's text when
+// the student has one open, so the tutor answers from the notes; absent it
+// answers as general study help. history is the conversation so far.
+export interface ChatTutorInput {
+  message: string;
+  contextText?: string;
+  history: ChatMessage[];
+}
+
+// One tutor turn: the reply plus 0 to 3 short follow-up suggestions.
+export interface ChatTutorOutput {
+  reply: string;
+  suggestions: string[];
+}
+
 // Which AI backend actually answered, and which model if known. Mirrors the
 // ai/model fields of RuntimeStatus but is scoped to the AiClient itself.
 export interface AiDescription {
@@ -64,6 +94,12 @@ export interface AiClient {
   // The PDF goes to the model as a document; the model transcribes it as
   // plain text and extracts the topics from that transcription.
   extractTopicsFromPdf(input: ExtractTopicsFromPdfInput): Promise<ExtractTopicsFromPdfOutput>;
+  // Study notes written only from the material: sections, summary, key
+  // points and flashcards, cached on the material by /api/notes.
+  generateNotes(input: GenerateNotesInput): Promise<MaterialNotes>;
+  // One tutor turn: a plain-language reply and follow-up suggestions,
+  // answered from the notes when contextText is given.
+  chatTutor(input: ChatTutorInput): Promise<ChatTutorOutput>;
   describe(): Promise<AiDescription>;
 }
 

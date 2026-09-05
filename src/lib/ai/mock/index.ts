@@ -1,25 +1,30 @@
 import { SAMPLE_MARKER, SAMPLE_NOTES } from "@/content/sample-notes";
-import { pdfTopicsSchema } from "@/lib/ai/schemas";
+import { chatSchema, notesSchema, pdfTopicsSchema } from "@/lib/ai/schemas";
 import { uniqueTopicIds } from "@/lib/ai/text";
 import type {
   AiClient,
   AiDescription,
+  ChatTutorInput,
+  ChatTutorOutput,
   ExplainTopicInput,
   ExplainTopicOutput,
   ExtractTopicsFromPdfInput,
   ExtractTopicsFromPdfOutput,
   ExtractTopicsInput,
   GenerateFeedbackInput,
+  GenerateNotesInput,
   GenerateQuizInput,
 } from "@/lib/ai/types";
 import { AiError } from "@/lib/ai/types";
-import type { Question, Topic, TopicProgress } from "@/lib/types";
+import type { Flashcard, MaterialNotes, NoteSection, Question, Topic, TopicProgress } from "@/lib/types";
 
 // Deterministic, offline stand-in for GeminiAi. Nothing here reads the
 // network or Math.random: every output is built only from its input, so the
 // same call always returns the same answer. Used whenever GEMINI_API_KEY is
-// not set. Every output must satisfy the zod schemas in ../schemas.ts; the
-// smoke test (scripts/smoke-ai.ts) asserts that directly.
+// not set. Quizzes, explanations, feedback, notes and chat replies are all
+// built from the topics and key points with templates. Every output must
+// satisfy the zod schemas in ../schemas.ts; the smoke test
+// (scripts/smoke-ai.ts) asserts that directly.
 
 // ---- shape limits, matching src/lib/ai/schemas.ts ------------------------
 
@@ -48,6 +53,33 @@ const FEEDBACK_MIN_WORDS = 80;
 const FEEDBACK_MAX_WORDS = 150;
 const FEEDBACK_MIN_CHARS = 200;
 const FEEDBACK_MAX_CHARS = 1400;
+
+// Study-notes limits, matching src/lib/ai/schemas.ts notesSchema. The word
+// ranges are the spec's (80 to 200 word section bodies, 40 to 80 word
+// summary); the character ranges are the schema's generous proxies.
+const NOTES_SECTION_MIN_WORDS = 80;
+const NOTES_SECTION_MAX_WORDS = 200;
+const NOTES_SECTION_MIN_CHARS = 300;
+const NOTES_SECTION_MAX_CHARS = 2000;
+const NOTES_SUMMARY_MIN_WORDS = 40;
+const NOTES_SUMMARY_MAX_WORDS = 80;
+const NOTES_SUMMARY_MIN_CHARS = 150;
+const NOTES_SUMMARY_MAX_CHARS = 800;
+const MIN_NOTE_SECTIONS = 4;
+const MAX_NOTE_SECTIONS = 8;
+const NOTE_KEY_POINT_MIN_CHARS = 3;
+const NOTE_KEY_POINT_MAX_CHARS = 240;
+const MIN_NOTE_KEY_POINTS = 5;
+const MAX_NOTE_KEY_POINTS = 8;
+const MIN_FLASHCARDS = 6;
+const MAX_FLASHCARDS = 10;
+const TITLE_MAX_CHARS = 160;
+
+// Chat tutor limits, matching chatSchema (a 40 to 150 word reply).
+const CHAT_REPLY_MIN_WORDS = 40;
+const CHAT_REPLY_MAX_WORDS = 150;
+const CHAT_REPLY_MIN_CHARS = 100;
+const CHAT_REPLY_MAX_CHARS = 1600;
 
 // ---- small generic text helpers ------------------------------------------
 
@@ -494,6 +526,197 @@ function buildFeedback(progress: TopicProgress[]): string {
   return clamp(sized, FEEDBACK_MIN_CHARS, FEEDBACK_MAX_CHARS);
 }
 
+// ---- generateNotes -----------------------------------------------------
+
+// One body section per topic: the topic summary as the opener, its key
+// points as a numbered walkthrough, a short closing, padded or trimmed into
+// the 80 to 200 word range with key-point fillers.
+function buildNoteSection(topic: Topic): NoteSection {
+  const points = topic.keyPoints.length >= MIN_KEY_POINTS ? topic.keyPoints : padKeyPoints(topic.keyPoints, topic.name);
+
+  const intro = topic.summary;
+  const walkthrough = points.map((point, i) => `${ordinal(i + 1)}, ${lowerFirst(point)}`).join(" ");
+  const closing = `When this section makes sense, re-read the part of the notes about ${topic.name} once and then move on to the next section.`;
+
+  const draft = [intro, walkthrough, closing].join(" ");
+  const sized = ensureWordRange(draft, NOTES_SECTION_MIN_WORDS, NOTES_SECTION_MAX_WORDS, (i) =>
+    `Remember: ${lowerFirst(points[i % points.length])}`
+  );
+
+  return {
+    heading: clamp(topic.name, 1, TITLE_MAX_CHARS),
+    content: clamp(sized, NOTES_SECTION_MIN_CHARS, NOTES_SECTION_MAX_CHARS),
+  };
+}
+
+// Extra review sections for very thin materials (fewer than four topics),
+// repeating each topic's points in a compressed form so the notes always
+// have the schema's minimum of four sections.
+function buildReviewSection(topic: Topic, number: number): NoteSection {
+  const points = topic.keyPoints.length >= MIN_KEY_POINTS ? topic.keyPoints : padKeyPoints(topic.keyPoints, topic.name);
+  const draft = `A quick review of ${topic.name}. ${topic.summary} ${points.join(" ")}`;
+  const sized = ensureWordRange(draft, NOTES_SECTION_MIN_WORDS, NOTES_SECTION_MAX_WORDS, (i) =>
+    `Remember: ${lowerFirst(points[i % points.length])}`
+  );
+  return {
+    heading: clamp(`Review ${number}: ${topic.name}`, 1, TITLE_MAX_CHARS),
+    content: clamp(sized, NOTES_SECTION_MIN_CHARS, NOTES_SECTION_MAX_CHARS),
+  };
+}
+
+function buildNoteSections(topics: Topic[]): NoteSection[] {
+  const sections = topics.slice(0, MAX_NOTE_SECTIONS).map((topic) => buildNoteSection(topic));
+  let reviewNumber = 1;
+  while (sections.length < MIN_NOTE_SECTIONS) {
+    sections.push(buildReviewSection(topics[(reviewNumber - 1) % topics.length], reviewNumber));
+    reviewNumber += 1;
+  }
+  return sections;
+}
+
+function buildNotesSummary(topics: Topic[]): string {
+  const names = topics.map((topic) => topic.name).join(", ");
+  const perTopic = topics.map((topic) => `${topic.name}: ${lowerFirst(topic.summary)}`).join(" ");
+  const draft = `These notes cover ${names}. ${perTopic}`;
+  const sized = ensureWordRange(draft, NOTES_SUMMARY_MIN_WORDS, NOTES_SUMMARY_MAX_WORDS, (i) => {
+    const topic = topics[i % topics.length];
+    const point = topic.keyPoints[i % Math.max(1, topic.keyPoints.length)];
+    return point ? `In short, ${lowerFirst(point)}` : topic.summary;
+  });
+  return clamp(sized, NOTES_SUMMARY_MIN_CHARS, NOTES_SUMMARY_MAX_CHARS);
+}
+
+function buildNotesKeyPoints(topics: Topic[]): string[] {
+  const pool = topics.flatMap((topic) =>
+    topic.keyPoints.map((point) => clamp(point, NOTE_KEY_POINT_MIN_CHARS, NOTE_KEY_POINT_MAX_CHARS))
+  );
+  const points = pool.slice(0, MAX_NOTE_KEY_POINTS);
+  let i = 0;
+  while (points.length < MIN_NOTE_KEY_POINTS) {
+    const topic = topics[i % topics.length];
+    points.push(
+      clamp(`Go back over ${topic.name} in the notes for one more takeaway.`, NOTE_KEY_POINT_MIN_CHARS, NOTE_KEY_POINT_MAX_CHARS)
+    );
+    i += 1;
+  }
+  return points;
+}
+
+// Flashcards cycle the topics and their key points: one card per key point
+// until the maximum is reached, then padded with summary cards if a very
+// thin material leaves the set below the minimum of six.
+function buildFlashcards(topics: Topic[]): Flashcard[] {
+  const cards: Flashcard[] = [];
+  const rounds = Math.max(...topics.map((topic) => topic.keyPoints.length));
+
+  outer: for (let round = 0; round < rounds; round += 1) {
+    for (const topic of topics) {
+      const point = topic.keyPoints[round];
+      if (!point) continue;
+      cards.push({
+        front: clamp(`What do the notes say about ${topic.name}, point ${round + 1}?`, 3, 300),
+        back: clamp(point, 1, 400),
+      });
+      if (cards.length >= MAX_FLASHCARDS) break outer;
+    }
+  }
+
+  let i = 0;
+  while (cards.length < MIN_FLASHCARDS) {
+    const topic = topics[i % topics.length];
+    cards.push({
+      front: clamp(`In one sentence, what is ${topic.name} about?`, 3, 300),
+      back: clamp(topic.summary, 1, 400),
+    });
+    i += 1;
+  }
+
+  return cards.slice(0, MAX_FLASHCARDS);
+}
+
+// ---- chatTutor ---------------------------------------------------------
+
+const GENERAL_CHAT_FILLERS = [
+  "Short, regular review beats one long cram session.",
+  "Explaining a topic out loud is the fastest way to find the gaps in it.",
+  "A night of sleep between study sessions helps the material stick.",
+];
+
+// The words of a text lowercased, kept over three characters long, so short
+// function words never drive the topic match.
+function contentWords(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((word) => word.length > 3));
+}
+
+// Picks the topic the message is most plausibly about: the first topic that
+// shares a content word with the message, else the first topic. Deterministic.
+function pickTopic(message: string, topics: Topic[]): Topic {
+  const messageWords = contentWords(message);
+  const picked = topics.find((topic) =>
+    [...contentWords(topic.name)].some((word) => messageWords.has(word))
+  );
+  return picked ?? topics[0];
+}
+
+// Reply built from the material's own topics: re-state what the notes cover,
+// go one level deeper on the topic the message is about, and point at the rest.
+function buildMaterialChat(message: string, contextText: string): ChatTutorOutput {
+  // The sample notes reuse their pre-computed topics, the same shortcut
+  // extractTopics takes, so the title line never masquerades as a topic.
+  const topics = contextText.includes(SAMPLE_MARKER)
+    ? cloneTopics(SAMPLE_NOTES.topics)
+    : buildTopicsFromText(contextText);
+  const picked = pickTopic(message, topics);
+
+  const listed = topics.slice(0, 3).map((topic) => topic.name);
+  const opening = `Your notes cover ${listed.join(", ")}${topics.length > listed.length ? ` and ${topics.length - listed.length} more sections` : ""}.`;
+  const anchorPoint = picked.keyPoints[0] ?? picked.summary;
+  const focus = `On ${picked.name}: ${lowerFirst(picked.summary)} To anchor it, remember that ${lowerFirst(anchorPoint)}`;
+  const others =
+    topics.length > 1
+      ? "The other sections connect to the same ideas, so skim them once you are happy with this one."
+      : "";
+  const closing = `Ask me for a simpler explanation or a quiz on any of these and I will build it from the notes.`;
+
+  const draft = [opening, focus, others, closing].filter(Boolean).join(" ");
+  const reply = clamp(
+    ensureWordRange(draft, CHAT_REPLY_MIN_WORDS, CHAT_REPLY_MAX_WORDS, (i) => {
+      const point = picked.keyPoints[i % Math.max(1, picked.keyPoints.length)];
+      return point ? `In short, ${lowerFirst(point)}` : `Re-read the section on ${picked.name}.`;
+    }),
+    CHAT_REPLY_MIN_CHARS,
+    CHAT_REPLY_MAX_CHARS
+  );
+
+  const second = topics.find((topic) => topic.id !== picked.id) ?? picked;
+  const suggestions = [
+    clamp(`Can you explain ${picked.name} in simpler words?`, 1, 200),
+    clamp(`Quiz me on ${picked.name}.`, 1, 200),
+    clamp(`Which key points of ${second.name} matter most?`, 1, 200),
+  ];
+
+  return { reply, suggestions };
+}
+
+// Fixed general-help template used when no material is open.
+function buildGeneralChat(): ChatTutorOutput {
+  const draft =
+    "There are no notes open right now, so here is some general study help. Pick one topic, close your screen, and write down everything you remember about it, then check what you wrote against the source and mark the gaps. Turn each gap into a short flashcard and review the set tomorrow, when recalling it is harder and therefore better practice. Once a material is ready, open it and ask me about one of its topics: I will answer from those notes and can build a quiz from them too.";
+  const reply = clamp(
+    ensureWordRange(draft, CHAT_REPLY_MIN_WORDS, CHAT_REPLY_MAX_WORDS, (i) => GENERAL_CHAT_FILLERS[i % GENERAL_CHAT_FILLERS.length]),
+    CHAT_REPLY_MIN_CHARS,
+    CHAT_REPLY_MAX_CHARS
+  );
+
+  const suggestions = [
+    clamp("Quiz me on my weakest topic.", 1, 200),
+    clamp("How should I plan a week of revision?", 1, 200),
+    clamp("Summarise my notes in five key points.", 1, 200),
+  ];
+
+  return { reply, suggestions };
+}
+
 // ---- extractTopicsFromPdf ----------------------------------------------
 
 const PDF_NO_TEXT_NOTE =
@@ -610,6 +833,29 @@ export class MockAi implements AiClient {
 
   async extractTopicsFromPdf(input: ExtractTopicsFromPdfInput): Promise<ExtractTopicsFromPdfOutput> {
     return buildPdfTopics(input.sourceName, input.title);
+  }
+
+  async generateNotes(input: GenerateNotesInput): Promise<MaterialNotes> {
+    if (input.topics.length === 0) {
+      throw new AiError("No topics were given to build notes from.");
+    }
+    // Validated against notesSchema before returning, the same
+    // shape-then-return order buildPdfTopics uses, so a template drift shows
+    // up as a loud error instead of a bad payload cached on the material.
+    return notesSchema.parse({
+      title: clamp(input.title, 1, TITLE_MAX_CHARS),
+      sections: buildNoteSections(input.topics),
+      summary: buildNotesSummary(input.topics),
+      keyPoints: buildNotesKeyPoints(input.topics),
+      flashcards: buildFlashcards(input.topics),
+    });
+  }
+
+  async chatTutor(input: ChatTutorInput): Promise<ChatTutorOutput> {
+    const hasMaterial = typeof input.contextText === "string" && input.contextText.trim().length > 0;
+    const result = hasMaterial ? buildMaterialChat(input.message, input.contextText as string) : buildGeneralChat();
+    // Same self-check as generateNotes: validated before returning.
+    return chatSchema.parse(result);
   }
 
   async describe(): Promise<AiDescription> {

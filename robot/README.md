@@ -76,6 +76,12 @@ the suite needs no API keys or service account and gives the same answers
 every run. The header badges "Mock AI" and "Memory store" are part of what
 the first suite checks, precisely to confirm this held.
 
+The same keyword also raises the per-IP request limit to 1000 per minute
+through `IP_REQUESTS_PER_MINUTE`, again for the started process only. The
+full run makes roughly 65 profiled API requests from localhost inside one
+minute, which the app's default cap of 60 would silently reject with 429s;
+production keeps that default of 60.
+
 ## Layout
 
 - `robot/requirements.txt`: the two Python packages this suite needs.

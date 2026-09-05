@@ -5,10 +5,16 @@ export interface Env {
   geminiApiKey: string;
   geminiModel: string;
   firebaseServiceAccountJson: string;
+  firebaseDatabaseUrl: string;
   dailyAiCallCap: number;
+  ipRequestsPerMinute: number;
 }
 
 const DEFAULT_DAILY_AI_CALL_CAP = 60;
+
+const DEFAULT_IP_REQUESTS_PER_MINUTE = 60;
+const MIN_IP_REQUESTS_PER_MINUTE = 1;
+const MAX_IP_REQUESTS_PER_MINUTE = 100000;
 
 declare global {
   var __edubuddyEnv: Env | undefined;
@@ -18,11 +24,27 @@ function readEnv(): Env {
   const geminiApiKey = (process.env.GEMINI_API_KEY ?? "").trim();
   const geminiModel = (process.env.GEMINI_MODEL ?? "").trim();
   const firebaseServiceAccountJson = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? "").trim();
+  const firebaseDatabaseUrl = (process.env.FIREBASE_DATABASE_URL ?? "").trim();
   const rawCap = (process.env.DAILY_AI_CALL_CAP ?? "").trim();
   const parsedCap = parseInt(rawCap, 10);
   const dailyAiCallCap = Number.isNaN(parsedCap) ? DEFAULT_DAILY_AI_CALL_CAP : parsedCap;
+  const rawPerMinute = (process.env.IP_REQUESTS_PER_MINUTE ?? "").trim();
+  const parsedPerMinute = parseInt(rawPerMinute, 10);
+  const ipRequestsPerMinute =
+    Number.isNaN(parsedPerMinute) ||
+    parsedPerMinute < MIN_IP_REQUESTS_PER_MINUTE ||
+    parsedPerMinute > MAX_IP_REQUESTS_PER_MINUTE
+      ? DEFAULT_IP_REQUESTS_PER_MINUTE
+      : parsedPerMinute;
 
-  return { geminiApiKey, geminiModel, firebaseServiceAccountJson, dailyAiCallCap };
+  return {
+    geminiApiKey,
+    geminiModel,
+    firebaseServiceAccountJson,
+    firebaseDatabaseUrl,
+    dailyAiCallCap,
+    ipRequestsPerMinute,
+  };
 }
 
 // Reads and caches process.env for this process. Call sites should use this

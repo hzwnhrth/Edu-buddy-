@@ -11,7 +11,6 @@ export { MAX_TEXT_CHARS, MAX_TITLE_CHARS, MAX_QUIZ_QUESTIONS, MAX_SOURCE_NAME_CH
 export class LimitError extends Error {}
 
 const WINDOW_MS = 60_000;
-const MAX_REQUESTS_PER_WINDOW = 60;
 
 declare global {
   var __edubuddyIpHits: Map<string, number[]> | undefined;
@@ -24,8 +23,11 @@ function getIpHits(): Map<string, number[]> {
   return globalThis.__edubuddyIpHits;
 }
 
-// Sliding-window rate limit: at most MAX_REQUESTS_PER_WINDOW requests per IP
-// in any trailing sixty seconds. Throws LimitError once the window is full.
+// Sliding-window rate limit: at most getEnv().ipRequestsPerMinute requests
+// per IP in any trailing sixty seconds (default 60, overridable through the
+// IP_REQUESTS_PER_MINUTE env variable). Throws LimitError once the window is
+// full. The cap is read at call time, not module load, so a freshly started
+// server process picks up whatever its environment says on the first request.
 // The caller (withProfile in api.ts) is responsible for reading the IP from
 // the x-forwarded-for header (first value) or falling back to "local".
 export function checkIpLimit(ip: string): void {
@@ -33,8 +35,9 @@ export function checkIpLimit(ip: string): void {
   const now = Date.now();
   const windowStart = now - WINDOW_MS;
   const recent = (hits.get(ip) ?? []).filter((timestamp) => timestamp > windowStart);
+  const maxRequests = getEnv().ipRequestsPerMinute;
 
-  if (recent.length >= MAX_REQUESTS_PER_WINDOW) {
+  if (recent.length >= maxRequests) {
     hits.set(ip, recent);
     throw new LimitError("Too many requests, please slow down");
   }

@@ -87,8 +87,16 @@ async function main(): Promise<void> {
   const quiz1 = (await readJson<QuizResponse>(createRes1)).quiz;
   check(quiz1.questions.length === 10, "(a) quiz has 10 questions", quiz1.questions.length);
   check(
-    quiz1.questions.every((question) => !("answerIndex" in question) && !("explanation" in question)),
-    "(a) no question carries answerIndex or explanation"
+    quiz1.questions.every(
+      (question) =>
+        !("answerIndex" in question) &&
+        typeof question.correctAnswerIndex === "number" &&
+        question.correctAnswerIndex >= 0 &&
+        question.correctAnswerIndex <= 3 &&
+        typeof question.explanation === "string" &&
+        question.explanation.length > 0
+    ),
+    "(a) every question carries correctAnswerIndex and explanation, never the internal answerIndex"
   );
   check(
     allTopicIds.every((topicId) => quiz1.topicIds.includes(topicId)),
@@ -113,6 +121,17 @@ async function main(): Promise<void> {
   // (d) submit all-correct answers (answer key read straight from the store).
   const storedQuiz1 = await store.getQuiz(quiz1.id);
   if (!storedQuiz1) throw new Error("quiz1 vanished from the store");
+  check(
+    storedQuiz1.questions.every((stored) => {
+      const shown = quiz1.questions.find((question) => question.qid === stored.qid);
+      return (
+        shown !== undefined &&
+        shown.correctAnswerIndex === stored.answerIndex &&
+        shown.explanation === stored.explanation
+      );
+    }),
+    "(d) the public answer key matches the stored key for every question"
+  );
   const allCorrect: AttemptRequest["answers"] = storedQuiz1.questions.map((question) => ({
     qid: question.qid,
     chosenIndex: question.answerIndex,

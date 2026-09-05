@@ -10,17 +10,20 @@
     "check": "node --env-file-if-exists=.env.local --import tsx scripts/check.ts",
     "list-models": "node --env-file-if-exists=.env.local --import tsx scripts/list-models.ts",
     "smoke:ai": "node --env-file-if-exists=.env.local --import tsx scripts/smoke-ai.ts",
-    "test:routes": "node --env-file-if-exists=.env.local --import tsx scripts/test-ingest.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-quiz.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-insight.ts",
+    "test:routes": "node --env-file-if-exists=.env.local --import tsx scripts/test-ingest.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-quiz.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-insight.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-notes.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-chat.ts",
     "test:e2e": "py -m robot --outputdir robot/results robot/suites"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
     "@opentelemetry/api": "^1.9.1",
     "firebase-admin": "^14.3.0",
+    "framer-motion": "^13.2.0",
     "next": "16.3.4",
     "pdfjs-dist": "^6.3.289",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-icons": "^5.7.0",
+    "recharts": "^3.10.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {

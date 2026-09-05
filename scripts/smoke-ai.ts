@@ -3,20 +3,23 @@ import path from "node:path";
 import { SAMPLE_NOTES } from "@/content/sample-notes";
 import { getAi } from "@/lib/ai";
 import {
+  chatSchema,
   explanationSchema,
   feedbackSchema,
+  notesSchema,
   pdfTopicsSchema,
   quizSchema,
   topicsSchema,
 } from "@/lib/ai/schemas";
 import { selectChunks, splitIntoChunks } from "@/lib/ai/text";
-import type { ExplainTopicOutput, ExtractTopicsFromPdfOutput } from "@/lib/ai/types";
-import type { Question, Topic, TopicProgress } from "@/lib/types";
+import type { ChatTutorOutput, ExplainTopicOutput, ExtractTopicsFromPdfOutput } from "@/lib/ai/types";
+import type { MaterialNotes, Question, Topic, TopicProgress } from "@/lib/types";
 
 // End-to-end check of the AI layer, in whatever mode the environment gives
-// (mock when GEMINI_API_KEY is unset, real Gemini otherwise): run all five
-// AiClient jobs, the four text jobs chained on the bundled sample notes the
-// way real route code would chain them, plus the scanned-PDF job on
+// (mock when GEMINI_API_KEY is unset, real Gemini otherwise): run all seven
+// AiClient jobs, the five text jobs chained on the bundled sample notes the
+// way real route code would chain them (topics, quiz, explanation, study
+// notes, feedback and the tutor chat), plus the scanned-PDF job on
 // robot/data/test.pdf, and validate every output against the zod schemas in
 // schemas.ts plus the id fields those schemas do not cover. Exits 1 on any
 // failure so it can be used as a CI-style gate.
@@ -80,6 +83,14 @@ function validateExplanation(output: ExplainTopicOutput): void {
 
 function validateFeedback(feedback: string): void {
   feedbackSchema.parse({ feedback });
+}
+
+function validateNotes(notes: MaterialNotes): void {
+  notesSchema.parse(notes);
+}
+
+function validateChat(output: ChatTutorOutput): void {
+  chatSchema.parse(output);
 }
 
 function validatePdfTopics(output: ExtractTopicsFromPdfOutput): void {
@@ -159,6 +170,23 @@ async function main(): Promise<void> {
   const preview = feedback.length > 120 ? `${feedback.slice(0, 120)}...` : feedback;
   console.log(`OK: generateFeedback -> ${wordCount(feedback)} words: "${preview}"`);
 
+  const notes = await ai.generateNotes({ title: SAMPLE_NOTES.title, topics, chunks: selected });
+  validateNotes(notes);
+  console.log(
+    `OK: generateNotes -> ${notes.sections.length} sections, ${notes.keyPoints.length} key points, ${notes.flashcards.length} flashcards, summary ${wordCount(notes.summary)} words`
+  );
+
+  const chat = await ai.chatTutor({
+    message: "Explain the most important idea in these notes in simple words.",
+    contextText: selected.join("\n\n"),
+    history: [],
+  });
+  validateChat(chat);
+  const chatPreview = chat.reply.length > 120 ? `${chat.reply.slice(0, 120)}...` : chat.reply;
+  console.log(
+    `OK: chatTutor -> ${wordCount(chat.reply)} words, ${chat.suggestions.length} suggestions: "${chatPreview}"`
+  );
+
   const pdfPath = path.join(process.cwd(), "robot", "data", "test.pdf");
   const pdfBuffer = await readFile(pdfPath);
   const pdfResult = await ai.extractTopicsFromPdf({
@@ -171,7 +199,7 @@ async function main(): Promise<void> {
     `OK: extractTopicsFromPdf -> ${pdfResult.text.length} transcribed characters, topics: ${pdfResult.topics.map((topic) => topic.name).join(", ")}`
   );
 
-  console.log("\nAll five AI jobs produced schema-valid output.");
+  console.log("\nAll seven AI jobs produced schema-valid output.");
 }
 
 main().catch((error) => {

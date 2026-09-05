@@ -39,13 +39,13 @@ export function withProfile<Params extends RouteParams = RouteParams>(
   handler: RouteHandler<Params>
 ) {
   return async (request: NextRequest, context?: RouteContext<Params>): Promise<Response> => {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
     try {
       const profileId = request.headers.get("x-profile-id") ?? "";
       if (!UUID_RE.test(profileId)) {
         return jsonError(400, "Missing or invalid profile id");
       }
 
-      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
       checkIpLimit(ip);
 
       const store = getStore();
@@ -55,6 +55,7 @@ export function withProfile<Params extends RouteParams = RouteParams>(
       return await handler({ request, profile, store, params });
     } catch (error) {
       if (error instanceof LimitError) {
+        console.warn(`rate limit reached for ip "${ip}": ${error.message}`);
         return jsonError(429, error.message);
       }
       if (error instanceof BadRequestError) {

@@ -6,9 +6,11 @@ import type { AttemptAnswer, Material, Quiz, Topic, TopicProgress } from "@/lib/
 // the store or the network, so every function is unit-testable on its own
 // (see scripts/test-quiz.ts).
 
-// Strips the answer key (answerIndex, explanation) from every question of a
-// stored quiz, leaving the shape that is safe to send to the browser before
-// (and after) the quiz has been attempted.
+// Maps a stored quiz onto the shape the quiz routes return. Since the UI
+// port the response carries the answer key per question, renamed from the
+// internal answerIndex to correctAnswerIndex and joined by its explanation,
+// so the Quiz screen can reveal it client-side. Grading itself stays
+// server-side and authoritative in gradeAnswers below.
 export function toPublicQuiz(quiz: Quiz): PublicQuiz {
   return {
     id: quiz.id,
@@ -20,6 +22,8 @@ export function toPublicQuiz(quiz: Quiz): PublicQuiz {
       topicId: question.topicId,
       stem: question.stem,
       options: question.options,
+      correctAnswerIndex: question.answerIndex,
+      explanation: question.explanation,
     })),
     createdAt: quiz.createdAt,
   };

@@ -43,7 +43,10 @@ Start App
     [Documentation]    Starts "npm start -- -p ${PORT}" in APP_DIR in the
     ...    background, forcing mock mode by overriding GEMINI_API_KEY and
     ...    FIREBASE_SERVICE_ACCOUNT_JSON to empty strings for this process
-    ...    only (even if a .env.local with real secrets exists), then waits
+    ...    only (even if a .env.local with real secrets exists), and raising
+    ...    the per-IP request cap through IP_REQUESTS_PER_MINUTE=1000 so the
+    ...    roughly 65 profiled requests a full run makes inside one minute
+    ...    cannot trip the rate limiter (the app's default is 60), then waits
     ...    until GET ${BASE_URL}/api/status reports ai "mock" and store
     ...    "memory". Stores the server process in ${SERVER_PROCESS} (a suite
     ...    variable) so Stop App can find it again later.
@@ -53,6 +56,7 @@ Start App
     ...    cwd=${APP_DIR}
     ...    env:GEMINI_API_KEY=
     ...    env:FIREBASE_SERVICE_ACCOUNT_JSON=
+    ...    env:IP_REQUESTS_PER_MINUTE=1000
     ...    alias=edubuddy_server
     ...    stdout=${OUTPUTDIR}${/}server_stdout.log
     ...    stderr=${OUTPUTDIR}${/}server_stderr.log
