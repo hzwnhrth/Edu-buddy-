@@ -10,6 +10,7 @@
     "check": "node --env-file-if-exists=.env.local --import tsx scripts/check.ts",
     "list-models": "node --env-file-if-exists=.env.local --import tsx scripts/list-models.ts",
     "smoke:ai": "node --env-file-if-exists=.env.local --import tsx scripts/smoke-ai.ts",
+    "test:srs": "node --env-file-if-exists=.env.local --import tsx scripts/test-srs.ts",
     "test:routes": "node --env-file-if-exists=.env.local --import tsx scripts/test-ingest.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-quiz.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-insight.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-notes.ts && node --env-file-if-exists=.env.local --import tsx scripts/test-chat.ts",
     "test:e2e": "py -m robot --outputdir robot/results robot/suites"
   },

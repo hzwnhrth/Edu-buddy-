@@ -1,4 +1,4 @@
-import type { PublicQuestion } from "@/lib/api-types";
+import type { PublicQuestion } from "@/lib/types";
 
 // Curated from the supplied Teks Sejarah T4 chapter: Warisan Negara Bangsa.
 // The bank deliberately uses stable ids because the scheduler stores progress

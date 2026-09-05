@@ -623,6 +623,17 @@ export function QuizArena() {
           )}
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center", marginTop: "1.5rem" }}>
+            {bankMode ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleStartHistoryBank}
+                style={{ borderRadius: "9999px" }}
+              >
+                <HiOutlineArrowPath /> Practise bank again
+              </button>
+            ) : (
+              <>
             {weakestTopicId ? (
               <Link
                 href={`/progress?material=${results.attempt.materialId}&topic=${weakestTopicId}`}
@@ -642,9 +653,11 @@ export function QuizArena() {
               onClick={handlePractiseWeak}
               disabled={weakTopics.length === 0}
               style={{ borderRadius: "9999px" }}
-            >
-              <HiOutlineArrowPath /> Practise weak topics
-            </button>
+              >
+                <HiOutlineArrowPath /> Practise weak topics
+              </button>
+              </>
+            )}
           </div>
           {weakTopics.length === 0 && (
             <p style={{ textAlign: "center", fontSize: "0.85rem", color: "#9CA3AF", marginTop: "0.6rem" }}>

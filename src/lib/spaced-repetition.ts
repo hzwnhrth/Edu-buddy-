@@ -30,9 +30,16 @@ export function scheduleReview(card: CardSchedule, rating: ReviewRating, now = n
     return next;
   }
 
-  const multiplier = rating === "easy" ? next.ease + 0.5 : rating === "hard" ? 1.2 : next.ease;
-  next.intervalDays = Math.max(1, Math.round((card.intervalDays || 1) * multiplier));
   next.ease = Math.max(1.3, card.ease + (rating === "easy" ? 0.15 : rating === "hard" ? -0.15 : 0));
+
+  if (card.repetitions === 0) {
+    // Learning step, mirroring Anki's new-card graduating intervals: one day
+    // for hard/good, four days for easy.
+    next.intervalDays = rating === "easy" ? 4 : 1;
+  } else {
+    const multiplier = rating === "hard" ? 1.2 : rating === "easy" ? next.ease * 1.3 : next.ease;
+    next.intervalDays = Math.max(1, Math.round((card.intervalDays || 1) * multiplier));
+  }
   next.repetitions += 1;
   next.dueAt = new Date(now.getTime() + next.intervalDays * DAY).toISOString();
   return next;
