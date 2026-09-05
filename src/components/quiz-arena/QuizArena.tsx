@@ -12,23 +12,27 @@ import {
   HiOutlineXCircle,
 } from "react-icons/hi2";
 import type { PublicQuiz } from "@/lib/api-types";
-import { QUIZ_BANKS } from "@/content/quiz-banks";
+import { DECK_OPTIONS, type QuizBank } from "@/content/quiz-banks";
 import {
+  bankForQid,
   buildSessionQuestions,
   deckDueCount,
+  loadSchedules,
   nextDueLabel,
   saveSchedules,
-  schedulesForBank,
+  type SchedulesByBank,
 } from "@/lib/quiz-bank";
 import { scheduleReview, type CardSchedule } from "@/lib/spaced-repetition";
 
 // Quiz Arena: a self-contained spaced-repetition quiz. The student picks a
-// topic deck, answers one shuffled question at a time, checks each answer
-// against the key, and lands on a local results view. Every answer feeds the
-// SM-2-style scheduler, which decides when the question comes back: correct
-// answers graduate the interval, wrong answers relearn it in ten minutes.
+// chapter deck (or the mix of every chapter), answers one shuffled question
+// at a time, checks each answer against the key, and lands on a local results
+// view. Every answer feeds the SM-2-style scheduler of its own chapter's
+// pool, which decides when the question comes back: correct answers graduate
+// the interval, wrong answers relearn it in ten minutes.
 
-const QUESTION_COUNTS = [3, 5, 8, 10];
+const SINGLE_DECK_COUNTS = [3, 5, 8, 10];
+const MIXED_DECK_COUNTS = [10, 20, 30, 40];
 
 interface LocalResult {
   qid: string;
@@ -40,13 +44,17 @@ interface LocalResult {
   explanation: string;
 }
 
-interface LocalResults {
-  score: number;
-  results: LocalResult[];
+interface TopicCard {
   topicName: string;
   correct: number;
   total: number;
   weak: boolean;
+}
+
+interface LocalResults {
+  score: number;
+  results: LocalResult[];
+  topicCards: TopicCard[];
   nextDue: string;
 }
 
@@ -73,16 +81,21 @@ const weakBadgeStyle = {
 } as const;
 
 export function QuizArena() {
-  const [selectedBankId, setSelectedBankId] = useState<string>(QUIZ_BANKS[0].id);
+  const [selectedDeckId, setSelectedDeckId] = useState<string>(DECK_OPTIONS[0].id);
   const [numQuestions, setNumQuestions] = useState(10);
-  const [dueByBank, setDueByBank] = useState<Record<string, number>>({});
+  const [dueByDeck, setDueByDeck] = useState<Record<string, number>>({});
   const [quiz, setQuiz] = useState<PublicQuiz | null>(null);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [schedules, setSchedules] = useState<CardSchedule[]>([]);
+  const [activeBanks, setActiveBanks] = useState<QuizBank[]>([]);
+  const [pools, setPools] = useState<SchedulesByBank>({});
   const [results, setResults] = useState<LocalResults | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
+
+  const selectedDeck = DECK_OPTIONS.find((option) => option.id === selectedDeckId) ?? DECK_OPTIONS[0];
+  const deckQuestionCount = selectedDeck.banks.reduce((total, bank) => total + bank.questions.length, 0);
+  const countChoices = deckQuestionCount > 10 ? MIXED_DECK_COUNTS : SINGLE_DECK_COUNTS;
 
   // Due counts come from localStorage (an external system), so the effect
   // reads it asynchronously and publishes the snapshot from the callback.
@@ -91,23 +104,34 @@ export function QuizArena() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const counts: Record<string, number> = {};
-      for (const bank of QUIZ_BANKS) {
-        counts[bank.id] = deckDueCount(bank);
+      for (const option of DECK_OPTIONS) {
+        counts[option.id] = option.banks.reduce((total, bank) => total + deckDueCount(bank), 0);
       }
-      setDueByBank(counts);
+      setDueByDeck(counts);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [quiz, results]);
 
+  const handleSelectDeck = (deckId: string) => {
+    setSelectedDeckId(deckId);
+    const option = DECK_OPTIONS.find((entry) => entry.id === deckId);
+    const available = option ? option.banks.reduce((total, bank) => total + bank.questions.length, 0) : 10;
+    const choices = available > 10 ? MIXED_DECK_COUNTS : SINGLE_DECK_COUNTS;
+    if (!choices.includes(numQuestions)) {
+      setNumQuestions(choices.includes(10) ? 10 : choices[0]);
+    }
+  };
+
   const handleStart = () => {
-    const bank = QUIZ_BANKS.find((entry) => entry.id === selectedBankId) ?? QUIZ_BANKS[0];
-    const loaded = schedulesForBank(bank);
-    const questions = buildSessionQuestions(bank, loaded, numQuestions);
-    setSchedules(loaded);
+    const deck = DECK_OPTIONS.find((option) => option.id === selectedDeckId) ?? DECK_OPTIONS[0];
+    const loaded = loadSchedules(deck.banks);
+    const questions = buildSessionQuestions(deck.banks, loaded, numQuestions);
+    setActiveBanks(deck.banks);
+    setPools(loaded);
     setQuiz({
-      id: `${bank.id}-${Date.now()}`,
-      materialId: bank.id,
-      topicIds: [bank.topicId],
+      id: `${deck.id}-${Date.now()}`,
+      materialId: deck.id,
+      topicIds: deck.banks.map((bank) => bank.topicId),
       difficulty: "medium",
       questions,
       createdAt: new Date().toISOString(),
@@ -133,13 +157,16 @@ export function QuizArena() {
 
     const question = quiz.questions[currentQ];
     const correct = selectedOption === question.correctAnswerIndex;
-    const updatedSchedules = schedules.map((entry) =>
-      entry.cardId === question.qid ? scheduleReview(entry, correct ? "good" : "again") : entry
-    );
-    const newAnswers = [...answers, selectedOption];
+    const bank = bankForQid(question.qid);
+    if (bank) {
+      const updatedPool = (pools[bank.id] ?? []).map((entry) =>
+        entry.cardId === question.qid ? scheduleReview(entry, correct ? "good" : "again") : entry
+      );
+      setPools((previous) => ({ ...previous, [bank.id]: updatedPool }));
+      saveSchedules(bank.id, updatedPool);
+    }
 
-    setSchedules(updatedSchedules);
-    saveSchedules(quiz.materialId, updatedSchedules);
+    const newAnswers = [...answers, selectedOption];
 
     if (currentQ < quiz.questions.length - 1) {
       setAnswers(newAnswers);
@@ -149,9 +176,30 @@ export function QuizArena() {
       return;
     }
 
-    const bank = QUIZ_BANKS.find((entry) => entry.id === quiz.materialId);
     const correctCount = newAnswers.filter((answer, index) => answer === quiz.questions[index].correctAnswerIndex).length;
     const score = correctCount / quiz.questions.length;
+
+    // One topic card per chapter that actually contributed questions, with
+    // this session's correct/total on it (deck practice is browser-only, so
+    // there is no cumulative progress to read).
+    const topicCards: TopicCard[] = activeBanks
+      .map((bank) => {
+        const indexes = quiz.questions
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ entry }) => bankForQid(entry.qid)?.id === bank.id)
+          .map(({ index }) => index);
+        const bankCorrect = indexes.filter((index) => newAnswers[index] === quiz.questions[index].correctAnswerIndex).length;
+        const total = indexes.length;
+        return {
+          topicName: bank.topicName,
+          correct: bankCorrect,
+          total,
+          weak: total >= 3 && bankCorrect / total < 0.6,
+        };
+      })
+      .filter((card) => card.total > 0);
+
+    const allSchedules: CardSchedule[] = Object.values(pools).flat();
 
     setAnswers(newAnswers);
     setResults({
@@ -165,11 +213,8 @@ export function QuizArena() {
         correctAnswerIndex: entry.correctAnswerIndex,
         explanation: entry.explanation,
       })),
-      topicName: bank?.topicName ?? bank?.title ?? "Topic",
-      correct: correctCount,
-      total: quiz.questions.length,
-      weak: quiz.questions.length >= 3 && score < 0.6,
-      nextDue: nextDueLabel(updatedSchedules),
+      topicCards,
+      nextDue: nextDueLabel(allSchedules),
     });
   };
 
@@ -188,21 +233,23 @@ export function QuizArena() {
       <motion.div className="page-container" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <div className="page-header" style={{ textAlign: "center", marginBottom: "2.5rem" }}>
           <h1>Quiz Arena</h1>
-          <p>Pick a topic deck and practise with spaced repetition, Anki-style.</p>
+          <p>Pick a chapter deck and practise with spaced repetition, Anki-style.</p>
         </div>
 
         <div style={{ maxWidth: "550px", margin: "0 auto" }}>
           <motion.div className="card" style={{ padding: "2rem" }} initial={{ y: 16 }} animate={{ y: 0 }}>
             <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.85rem", color: "#111827" }}>Select a topic deck</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.75rem" }}>
-              {QUIZ_BANKS.map((bank) => {
-                const selected = bank.id === selectedBankId;
-                const due = dueByBank[bank.id] ?? bank.questions.length;
+              {DECK_OPTIONS.map((deck) => {
+                const selected = deck.id === selectedDeckId;
+                const total = deck.banks.reduce((sum, bank) => sum + bank.questions.length, 0);
+                const due = dueByDeck[deck.id] ?? total;
+                const isMix = deck.banks.length > 1;
                 return (
                   <button
-                    key={bank.id}
+                    key={deck.id}
                     type="button"
-                    onClick={() => setSelectedBankId(bank.id)}
+                    onClick={() => handleSelectDeck(deck.id)}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -217,18 +264,18 @@ export function QuizArena() {
                       transition: "0.2s ease",
                     }}
                   >
-                    <span style={{ fontSize: "1.35rem", color: selected ? "#16A34A" : "#9CA3AF", flexShrink: 0 }}>
+                    <span style={{ fontSize: "1.35rem", color: isMix ? "#8B5CF6" : selected ? "#16A34A" : "#9CA3AF", flexShrink: 0 }}>
                       <HiOutlineBookOpen />
                     </span>
                     <span style={{ flex: 1 }}>
                       <span style={{ display: "block", fontSize: "0.7rem", fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9CA3AF" }}>
-                        {bank.subject}
+                        {deck.subject}
                       </span>
                       <span style={{ display: "block", fontWeight: 700, fontSize: "0.95rem", color: "#111827", margin: "0.15rem 0" }}>
-                        {bank.title}
+                        {deck.title}
                       </span>
                       <span style={{ display: "block", fontSize: "0.8rem", color: "#6B7280" }}>
-                        {bank.questions.length} questions · {due} due for review
+                        {total} questions · {due} due for review
                       </span>
                     </span>
                     {selected && (
@@ -255,7 +302,11 @@ export function QuizArena() {
                   fontWeight: 600, cursor: "pointer",
                 }}
               >
-                {QUESTION_COUNTS.map((n) => <option key={n} value={n}>{n}</option>)}
+                {countChoices.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -293,14 +344,14 @@ export function QuizArena() {
               transition={{ type: "spring", stiffness: 100, damping: 15 }}
             >
               <div className="score-value">{pct}%</div>
-              <div className="score-label">{results.correct}/{results.total}</div>
+              <div className="score-label">{results.results.filter((r) => r.correct).length}/{results.results.length}</div>
             </motion.div>
 
             <h2 style={{ fontSize: "1.35rem", fontWeight: 800, marginBottom: "0.5rem", color: "#111827" }}>
               {verdictText(pct)}
             </h2>
             <p style={{ color: "#6B7280", fontSize: "0.95rem" }}>
-              You answered {results.correct} of {results.total} questions correctly.
+              You answered {results.results.filter((r) => r.correct).length} of {results.results.length} questions correctly.
             </p>
             <p style={{ color: "#9CA3AF", fontSize: "0.85rem", marginTop: "0.5rem" }}>
               Next review: {results.nextDue}
@@ -347,32 +398,37 @@ export function QuizArena() {
 
           <h3 style={{ fontSize: "1.1rem", fontWeight: 800, margin: "1.75rem 0 1rem 0", color: "#6B7280" }}>Topics</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-            <motion.div className="card" style={{ padding: "1.25rem" }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.75rem" }}>
-                <p style={{ flex: 1, fontWeight: 700, fontSize: "0.95rem", color: "#111827" }}>{results.topicName}</p>
-                <span style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600 }}>
-                  {results.correct}/{results.total}
-                </span>
-                {results.weak && <span style={weakBadgeStyle}>Weak</span>}
-              </div>
-              <div
-                role="progressbar"
-                aria-valuenow={pct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={`${results.topicName} mastery`}
-                style={{ height: "8px", background: "#E5E7EB", borderRadius: "9999px", overflow: "hidden" }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${pct}%`,
-                    background: results.weak ? "#F59E0B" : "#22C55E",
-                    borderRadius: "9999px",
-                  }}
-                />
-              </div>
-            </motion.div>
+            {results.topicCards.map((topic, i) => {
+              const topicPct = masteryPercent(topic.total > 0 ? topic.correct / topic.total : 0);
+              return (
+                <motion.div key={topic.topicName} className="card" style={{ padding: "1.25rem" }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.75rem" }}>
+                    <p style={{ flex: 1, fontWeight: 700, fontSize: "0.95rem", color: "#111827" }}>{topic.topicName}</p>
+                    <span style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600 }}>
+                      {topic.correct}/{topic.total}
+                    </span>
+                    {topic.weak && <span style={weakBadgeStyle}>Weak</span>}
+                  </div>
+                  <div
+                    role="progressbar"
+                    aria-valuenow={topicPct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${topic.topicName} mastery`}
+                    style={{ height: "8px", background: "#E5E7EB", borderRadius: "9999px", overflow: "hidden" }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${topicPct}%`,
+                        background: topic.weak ? "#F59E0B" : "#22C55E",
+                        borderRadius: "9999px",
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </motion.div>

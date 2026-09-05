@@ -1,5 +1,5 @@
-import { QUIZ_BANKS } from "@/content/quiz-banks";
-import { buildSessionQuestions, nextDueLabel, selectSessionQuestions } from "@/lib/quiz-bank";
+import { DECK_OPTIONS, QUIZ_BANKS, type QuizBank } from "@/content/quiz-banks";
+import { buildSessionQuestions, nextDueLabel, selectSessionQuestions, type SchedulesByBank } from "@/lib/quiz-bank";
 import { isDue, newCardSchedule, scheduleReview, type CardSchedule } from "@/lib/spaced-repetition";
 
 // Exercises the bundled quiz banks and the spaced-repetition layer (scheduler
@@ -31,24 +31,40 @@ function canonical(values: readonly string[]): string {
   return JSON.stringify([...values].sort());
 }
 
-async function main(): Promise<void> {
-  const bank = QUIZ_BANKS[0];
+function freshPools(banks: readonly QuizBank[]): SchedulesByBank {
+  const pools: SchedulesByBank = {};
+  for (const bank of banks) {
+    pools[bank.id] = bank.questions.map((question) => newCardSchedule(question.qid));
+  }
+  return pools;
+}
 
-  // (a) bank integrity: 10 questions, unique ids, 4 distinct options, a valid
-  // answer index and a non-empty explanation each.
-  check(bank.questions.length === 10, "(a) bank has 10 questions", bank.questions.length);
-  const qids = new Set(bank.questions.map((question) => question.qid));
-  check(qids.size === bank.questions.length, "(a) question ids are unique");
+async function main(): Promise<void> {
+  // (a) bank integrity: three banks of 10 questions each, unique ids across
+  // the whole registry, 4 distinct options, a valid answer index and a
+  // non-empty explanation per question.
+  check(QUIZ_BANKS.length === 3, "(a) registry has three chapter banks", QUIZ_BANKS.length);
+  const allQids = new Set(QUIZ_BANKS.flatMap((bank) => bank.questions.map((question) => question.qid)));
+  check(allQids.size === QUIZ_BANKS.length * 10, "(a) 30 question ids, all unique", allQids.size);
   check(
-    bank.questions.every(
-      (question) =>
-        question.options.length === 4 &&
-        new Set(question.options).size === 4 &&
-        question.answerIndex >= 0 &&
-        question.answerIndex <= 3 &&
-        question.explanation.trim().length > 0
+    QUIZ_BANKS.every(
+      (bank) =>
+        bank.questions.length === 10 &&
+        bank.questions.every(
+          (question) =>
+            question.options.length === 4 &&
+            new Set(question.options).size === 4 &&
+            question.answerIndex >= 0 &&
+            question.answerIndex <= 3 &&
+            question.explanation.trim().length > 0
+        )
     ),
-    "(a) every question has 4 distinct options, a valid answer index and an explanation"
+    "(a) every bank has 10 questions, each with 4 distinct options, a valid answer index and an explanation"
+  );
+  check(
+    DECK_OPTIONS.length === QUIZ_BANKS.length + 1 &&
+      DECK_OPTIONS[DECK_OPTIONS.length - 1].banks.length === QUIZ_BANKS.length,
+    "(a) deck options are the chapters plus one mix of all three"
   );
 
   // (b) a new card is due immediately.
@@ -117,55 +133,76 @@ async function main(): Promise<void> {
   // (j) scrambling: over 25 rounds every session keeps every original
   // question and its exact correct answer text (options reshuffled, index
   // remapped), and at least one round differs from the bank's own order.
-  const schedules = bank.questions.map((question) => newCardSchedule(question.qid));
-  let scrambleVaries = false;
-  let scramblesHold = true;
-  for (let round = 0; round < 25; round += 1) {
-    const session = buildSessionQuestions(bank, schedules, 10);
-    if (
-      session.length !== 10 ||
-      session[0].qid !== bank.questions[0].qid ||
-      session[0].options[0] !== bank.questions[0].options[0]
-    ) {
-      scrambleVaries = true;
-    }
-    for (const original of bank.questions) {
-      const shown = session.find((entry) => entry.qid === original.qid);
+  // Run for one chapter and for the full mix.
+  for (const label of ["single chapter", "mixed chapters"] as const) {
+    const banks = label === "single chapter" ? [QUIZ_BANKS[0]] : QUIZ_BANKS;
+    const pools = freshPools(banks);
+    const expected = banks.flatMap((bank) => bank.questions);
+    let scrambleVaries = false;
+    let scramblesHold = true;
+    for (let round = 0; round < 25; round += 1) {
+      const session = buildSessionQuestions(banks, pools, 40);
       if (
-        !shown ||
-        canonical(shown.options) !== canonical(original.options) ||
-        shown.options[shown.correctAnswerIndex] !== original.options[original.answerIndex]
+        session[0].qid !== expected[0].qid ||
+        session[0].options[0] !== expected[0].options[0]
       ) {
-        scramblesHold = false;
+        scrambleVaries = true;
+      }
+      for (const original of expected) {
+        const shown = session.find((entry) => entry.qid === original.qid);
+        if (
+          !shown ||
+          canonical(shown.options) !== canonical(original.options) ||
+          shown.options[shown.correctAnswerIndex] !== original.options[original.answerIndex]
+        ) {
+          scramblesHold = false;
+        }
       }
     }
+    check(scramblesHold, `(j) ${label}: every scrambled session keeps all questions and the correct answer at the marked index`);
+    check(scrambleVaries, `(j) ${label}: scrambling varies question or option order across rounds`);
   }
-  check(scramblesHold, "(j) every scrambled session keeps all questions and the correct answer at the marked index");
-  check(scrambleVaries, "(j) scrambling varies question or option order across rounds");
 
-  // (k) session selection: due cards come first, the count caps the session,
-  // and not-due cards only fill the remaining slots.
+  // (k) session selection: due cards come first across banks, the count caps
+  // the session, and not-due cards only fill the remaining slots.
   const now = new Date("2026-01-01T09:00:00Z");
   const past = "2025-12-01T09:00:00Z";
   const future = new Date(now.getTime() + 5 * DAY).toISOString();
-  const custom: CardSchedule[] = bank.questions.map((question, i) => ({
-    ...newCardSchedule(question.qid, now),
-    repetitions: 1,
-    dueAt: i < 3 ? past : future,
-  }));
-  const dueIds = new Set(bank.questions.slice(0, 3).map((question) => question.qid));
-  const selectedAll = selectSessionQuestions(bank, custom, 10, now);
-  check(selectedAll.length === 10, "(k) a count of 10 selects every card", selectedAll.length);
+  const pools: SchedulesByBank = {};
+  for (const bank of QUIZ_BANKS) {
+    pools[bank.id] = bank.questions.map((question, i) => ({
+      ...newCardSchedule(question.qid, now),
+      repetitions: 1,
+      dueAt: i < 3 ? past : future,
+    }));
+  }
+  const dueIds = new Set(QUIZ_BANKS.flatMap((bank) => bank.questions.slice(0, 3).map((question) => question.qid)));
+  const singleBank = QUIZ_BANKS[0];
+  const selectedSingle = selectSessionQuestions([singleBank], pools, 10, now);
+  check(selectedSingle.length === 10, "(k) a count of 10 selects every card of one bank", selectedSingle.length);
   check(
-    new Set(selectedAll.slice(0, 3).map((question) => question.qid)).size === 3 &&
-      selectedAll.slice(0, 3).every((question) => dueIds.has(question.qid)),
-    "(k) the three due cards are selected first"
+    new Set(selectedSingle.slice(0, 3).map((question) => question.qid)).size === 3 &&
+      selectedSingle.slice(0, 3).every((question) => dueIds.has(question.qid)),
+    "(k) one bank: the three due cards are selected first"
   );
-  const selectedThree = selectSessionQuestions(bank, custom, 3, now);
+  const selectedThree = selectSessionQuestions([singleBank], pools, 3, now);
   check(
-    selectedThree.length === 3 &&
-      selectedThree.every((question) => dueIds.has(question.qid)),
-    "(k) a count of 3 selects exactly the three due cards"
+    selectedThree.length === 3 && selectedThree.every((question) => dueIds.has(question.qid)),
+    "(k) one bank: a count of 3 selects exactly the three due cards"
+  );
+  const selectedMixed = selectSessionQuestions(QUIZ_BANKS, pools, 40, now);
+  check(selectedMixed.length === 30, "(k) the mix selects all 30 cards", selectedMixed.length);
+  check(
+    selectedMixed.slice(0, 9).every((question) => dueIds.has(question.qid)) &&
+      new Set(selectedMixed.slice(0, 9).map((question) => question.qid)).size === 9,
+    "(k) the mix puts the nine due cards (three per bank) first"
+  );
+  const selectedTen = selectSessionQuestions(QUIZ_BANKS, pools, 10, now);
+  check(
+    selectedTen.length === 10 &&
+      selectedTen.slice(0, 9).every((question) => dueIds.has(question.qid)) &&
+      !dueIds.has(selectedTen[9].qid),
+    "(k) the mix with a count of 10 draws the nine due cards first, then fills the last slot ahead of schedule"
   );
 
   // (l) next-due labels.

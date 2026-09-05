@@ -1,14 +1,25 @@
-import type { QuizBank, BankQuestion } from "@/content/quiz-banks";
+import { QUIZ_BANKS, type QuizBank, type BankQuestion } from "@/content/quiz-banks";
 import { newCardSchedule, type CardSchedule } from "@/lib/spaced-repetition";
 import type { PublicQuestion } from "@/lib/types";
 
-// Client-side helpers around the bundled quiz banks: per-deck schedule
+// Client-side helpers around the bundled quiz banks: per-bank schedule
 // storage in localStorage, Fisher-Yates shuffling, and building one practice
-// session out of the scheduler's state. Storage never throws; practice works
-// for the session even when persistence is unavailable.
+// session (from one chapter or a mix of all of them) out of the scheduler's
+// state. Storage never throws; practice works for the session even when
+// persistence is unavailable.
+
+// Per-bank schedule pools for one session, keyed by bank id.
+export type SchedulesByBank = Record<string, CardSchedule[]>;
 
 export function srsStorageKey(bankId: string): string {
   return `edubuddy.srs.${bankId}`;
+}
+
+// The bank a question id belongs to, for routing an answer to the right
+// schedule pool; null for an unknown id.
+const bankByQid = new Map<string, QuizBank>(QUIZ_BANKS.flatMap((bank) => bank.questions.map((question) => [question.qid, bank])));
+export function bankForQid(qid: string): QuizBank | null {
+  return bankByQid.get(qid) ?? null;
 }
 
 // Fisher-Yates shuffle returning a copy; the input is never mutated.
@@ -21,7 +32,7 @@ export function shuffle<T>(items: readonly T[]): T[] {
   return copy;
 }
 
-// The deck's schedules from storage, with a fresh card for any question
+// One bank's schedules from storage, with a fresh card for any question the
 // storage has never seen, so new bank questions join seamlessly while old
 // question ids keep their schedule forever.
 export function schedulesForBank(bank: QuizBank): CardSchedule[] {
@@ -36,6 +47,15 @@ export function schedulesForBank(bank: QuizBank): CardSchedule[] {
   }
   const known = new Map(saved.map((card) => [card.cardId, card]));
   return bank.questions.map((question) => known.get(question.qid) ?? newCardSchedule(question.qid));
+}
+
+// Loads every given bank's schedule pool at once.
+export function loadSchedules(banks: readonly QuizBank[]): SchedulesByBank {
+  const pools: SchedulesByBank = {};
+  for (const bank of banks) {
+    pools[bank.id] = schedulesForBank(bank);
+  }
+  return pools;
 }
 
 export function saveSchedules(bankId: string, schedules: CardSchedule[]): void {
@@ -67,45 +87,56 @@ function toScrambledQuestion(question: BankQuestion, topicId: string): PublicQue
   };
 }
 
-// Ordered session selection before any final shuffle: cards the scheduler
-// says are due first, then, only to fill the requested count, the rest by
-// soonest due date (practising ahead). Capped at `count`.
+// Ordered session selection across every given bank's pool before any final
+// shuffle: cards the scheduler says are due first (across all banks), then,
+// only to fill the requested count, the rest by soonest due date (practising
+// ahead). Capped at `count`.
 export function selectSessionQuestions(
-  bank: QuizBank,
-  schedules: CardSchedule[],
+  banks: readonly QuizBank[],
+  pools: SchedulesByBank,
   count: number,
   now = new Date()
 ): PublicQuestion[] {
-  const byQid = new Map(bank.questions.map((question) => [question.qid, question]));
-  const dueIds = new Set(
-    schedules.filter((card) => new Date(card.dueAt).getTime() <= now.getTime()).map((card) => card.cardId)
-  );
-  const due = shuffle([...dueIds]);
-  const rest = schedules
-    .filter((card) => !dueIds.has(card.cardId))
-    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
-    .map((card) => card.cardId);
+  interface Entry {
+    question: BankQuestion;
+    bank: QuizBank;
+    dueAt: number;
+  }
 
-  return [...due, ...rest]
+  const due: Entry[] = [];
+  const rest: Entry[] = [];
+  for (const bank of banks) {
+    const questionByQid = new Map(bank.questions.map((question) => [question.qid, question]));
+    for (const card of pools[bank.id] ?? []) {
+      const question = questionByQid.get(card.cardId);
+      if (!question) continue;
+      const entry: Entry = { question, bank, dueAt: new Date(card.dueAt).getTime() };
+      if (entry.dueAt <= now.getTime()) {
+        due.push(entry);
+      } else {
+        rest.push(entry);
+      }
+    }
+  }
+
+  return [...shuffle(due), ...rest.sort((a, b) => a.dueAt - b.dueAt)]
     .slice(0, Math.max(0, count))
-    .map((qid) => byQid.get(qid))
-    .filter((question): question is BankQuestion => question !== undefined)
-    .map((question) => toScrambledQuestion(question, bank.topicId));
+    .map(({ question, bank }) => toScrambledQuestion(question, bank.topicId));
 }
 
 // The full session: the selected cards in random order (Anki shows due cards
 // shuffled, and the due-first split is a selection priority, not a sequence).
 export function buildSessionQuestions(
-  bank: QuizBank,
-  schedules: CardSchedule[],
+  banks: readonly QuizBank[],
+  pools: SchedulesByBank,
   count: number,
   now = new Date()
 ): PublicQuestion[] {
-  return shuffle(selectSessionQuestions(bank, schedules, count, now));
+  return shuffle(selectSessionQuestions(banks, pools, count, now));
 }
 
 // Human label for the soonest due card, for the results view.
-export function nextDueLabel(schedules: CardSchedule[], now = new Date()): string {
+export function nextDueLabel(schedules: readonly CardSchedule[], now = new Date()): string {
   if (schedules.length === 0) return "later";
   const earliest = Math.min(...schedules.map((card) => new Date(card.dueAt).getTime()));
   const ms = earliest - now.getTime();
