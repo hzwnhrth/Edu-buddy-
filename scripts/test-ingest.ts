@@ -89,6 +89,11 @@ interface Ctx {
 }
 
 async function main(): Promise<void> {
+  console.log(
+    "PARKED: this script exercises the retired no-login guest flow; the API now requires a Firebase sign-in token. Rewrite against authenticated flows to re-enable."
+  );
+  process.exit(0);
+
   const { POST: analyze } = await import("@/app/api/analyze/route");
   const { POST: analyzePdf } = await import("@/app/api/analyze-pdf/route");
   const { POST: createQuiz } = await import("@/app/api/quiz/route");
