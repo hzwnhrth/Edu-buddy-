@@ -1,0 +1,116 @@
+# EduBuddy specification
+
+EduBuddy turns a student's lecture notes into topics, quizzes, explanations of weak topics and a short study plan. There is no login: the browser keeps a random profile ID and every request carries it. This document is the contract every part of the code is built to. When code and this document disagree, fix one of them in the same change.
+
+## 1. The flow
+
+Six screens, in a straight line, with one loop back.
+
+1. Dashboard, route `/`. Home page. Recent notes, overall mastery, a "Review today" queue, latest feedback. Two actions: "Upload notes" and "Try sample notes". A first-time visitor sees an empty state that points at upload. The "Review today" queue (Phase 3) lists at most five topics to work on now: weak topics first, lowest mastery first, then topics not practised for `REVIEW_STALE_DAYS` (3) days or more, oldest first, with a topic that has progress but no attempt counting as oldest. Each item links to its study page and says why it is listed ("Weak", or the days since it was last practised). The queue is built in the browser from the progress list by `buildReviewQueue(progress, now)` in `src/lib/review.ts`, and it replaces the separate weak-topic list, so no topic appears twice on the dashboard. When there is progress but nothing to review, the queue says so in one line; with no progress at all it is not shown.
+2. Upload, route `/upload`. Drop a PDF or paste text. Title is filled from the file name and can be edited. Analysis runs and the app moves to the Topics screen by itself. Scanned PDFs (Phase 3): when in-browser extraction finds fewer than `MIN_EXTRACTED_CHARS` (200) characters, the form tells the student that no readable text was found and that the PDF itself will be sent for reading, and on submit posts it as base64 to `/api/analyze-pdf` instead of `/api/analyze`. That path only accepts files of at most `MAX_PDF_BYTES` (3 MiB); a larger text-free PDF gets a message asking for a smaller file or pasted text. PDFs with readable text keep the browser-side limit `MAX_UPLOAD_PDF_BYTES` (25 MiB).
+3. Topics, route `/notes/[id]`. The extracted topics with a one-line summary each, all selected by default, one button "Start quiz". Past scores for these notes below. Mastery overview (Phase 3): each topic card also shows the topic's mastery from the progress list, as a bar with the percentage, a "Weak" badge when the topic is weak, or the words "Not practised yet" when there is no progress for it. The bars are the only additions; the checkboxes stay one per topic and nothing else on the screen changes.
+4. Quiz, route `/notes/[id]/quiz?quiz=<quizId>`. One question at a time, four options, progress bar, submit at the end.
+5. Results, route `/notes/[id]/results?attempt=<attemptId>`. Score, per-topic bars, weak topics flagged, then three actions: "Study weak topics", "Practise weak topics", "Dashboard".
+6. Study, route `/study/[materialId]/[topicId]`. The plain-language explanation for one topic, its key points, one action "Practise this topic".
+
+Every screen has exactly one primary action. Secondary actions are visually quieter. The app must be usable on a phone.
+
+## 2. Identity without login
+
+- On first visit the browser creates a UUID with `crypto.randomUUID()`, stores it in localStorage under `edubuddy.profileId`, and sends it as the `x-profile-id` header on every API call (see `src/lib/profile-client.ts`).
+- The server validates the header, loads or creates the profile, and scopes every read and write to it (see `src/lib/api.ts`). A request for another profile's material, quiz or attempt gets 404, never the data.
+- Progress belongs to the browser it was made in. That is accepted.
+
+## 3. Data
+
+Types live in `src/lib/types.ts`. Storage goes through the `Store` interface in `src/lib/store/types.ts`, implemented by `MemoryStore` (no credentials) and `FirestoreStore` (service account set). Route code never imports either implementation directly; it calls `getStore()`. The interface includes `getAttempt(id)` (Phase 3), which returns one attempt or null; the route that uses it compares the attempt's `profileId` with the caller's and answers 404 on a mismatch. In both implementations `getOrCreateProfile` writes `lastSeenAt` only when the stored value is older than ten minutes, so a busy session does not write on every request.
+
+Firestore layout: `profiles/{profileId}`, `materials/{materialId}` with subcollection `chunks/{order}`, `quizzes/{quizId}`, `attempts/{attemptId}`, `progress/{profileId}/topics/{topicId}`. Dates are ISO strings.
+
+Mastery rule: for a topic, `mastery = correct / (correct + wrong)` over all attempts. A topic is `weak` when mastery is below 0.6 and at least 3 questions have been answered. Both values are stored on `TopicProgress` and recomputed on every graded attempt.
+
+Text handling: uploaded text is capped at `MAX_TEXT_CHARS` (300000, defined in `src/lib/constants.ts`). It is split into chunks of about 6000 characters on paragraph boundaries (see `splitIntoChunks` in `src/lib/ai/text.ts`) and stored in order. Quiz and explain calls send only the chunks relevant to the chosen topics; when relevance is unknown, send the first chunks up to a budget of about 24000 characters.
+
+## 4. API routes
+
+Request and response shapes are in `src/lib/api-types.ts` and are the contract. All routes are under `src/app/api`. All use `withProfile` from `src/lib/api.ts` except `/api/status`. Input is validated with zod through `parseBody`. AI calls go through `consumeAiCall` first, so the daily cap applies.
+
+| Route | Method | Purpose | Owner |
+| --- | --- | --- | --- |
+| /api/status | GET | Which backends are live | done |
+| /api/analyze | POST | Create a material and extract topics | ingest |
+| /api/analyze-pdf | POST | Scanned-PDF fallback: transcribe a base64 PDF and extract topics | ingest |
+| /api/materials/[id] | GET | Material with attempts and progress | ingest |
+| /api/quiz | POST | Generate and store a quiz, return it without answers | quiz |
+| /api/quizzes/[id] | GET | Fetch a quiz again, without answers | quiz |
+| /api/attempt | POST | Grade answers, store the attempt, update progress | quiz |
+| /api/attempts/[id] | GET | Fetch a graded attempt again | quiz |
+| /api/explain | POST | Explanation of one topic, cached on progress | insight |
+| /api/feedback | POST | Study plan from progress, saved on the profile | insight |
+| /api/me | GET | Dashboard data | insight |
+
+Grading rules for `/api/attempt`: every question in the quiz must be answered exactly once; `chosenIndex` must be 0 to 3; `score` is correct divided by total; after grading, `TopicProgress` is updated for every topic in the quiz and the response carries the per-topic result computed from the updated progress. In each `TopicResult`, `correct` and `total` count this attempt's questions on that topic, while `mastery` and `weak` are the cumulative values after the update. Each `QuestionResult` also carries the question's `stem` and `options`, so the Results screen needs only the attempt and never has to fetch the quiz again (this addition to `api-types.ts` is made by the quiz owner in Phase 2 together with the fixtures and the Results screen).
+
+The "not ready" convention: a route that exists but is unfinished answers 501 with `{"error":"Not implemented yet"}`, and the screens show a calm placeholder for exactly that message. A route that does not exist yet answers 404, which the screens show as an error, so every planned route must exist at least as a 501 stub.
+
+Sample notes: `/api/analyze` accepts the sample text like any other text. The Upload and Dashboard screens send the bundled sample (`src/content/sample-notes.ts`) with `sourceName: "sample"`. In mock mode the mock AI recognises the sample and returns its pre-computed topics. With real Gemini the sample is analysed live like any other notes.
+
+Scanned PDFs (Phase 3): `/api/analyze-pdf` takes `AnalyzePdfRequest` (`title`, `pdfBase64`, optional `sourceName` and `pageCount`) and answers with the same `AnalyzeResponse` as `/api/analyze`, status 201, so the Upload screen handles both routes the same way. Validation: the title rules of `/api/analyze`; `sourceName` at most `MAX_SOURCE_NAME_CHARS` characters, default "upload.pdf"; `pdfBase64` is standard base64 of at most `MAX_PDF_BASE64_CHARS` characters (4 MiB, exactly the base64 length of a 3 MiB file) whose decoded bytes are at most `MAX_PDF_BYTES` and start with `%PDF`; anything else is 400 with a plain message. The route counts one AI call, asks `extractTopicsFromPdf` for the transcribed text and the topics, stores the text as chunks exactly as pasted text is stored (`charCount` is the transcription length, `pageCount` comes from the request, `status` is `ready`), and returns the material. The base64 cap keeps the JSON body small enough for serverless request limits.
+
+## 5. AI layer
+
+Everything AI lives under `src/lib/ai`. Route code calls `getAi()` and never touches the SDK. The `AiClient` interface has four jobs:
+
+- `extractTopics({ title, text })` returns 4 to 8 topics. Each has a short name (at most 6 words), a one-sentence summary, and 3 to 5 key points. Topic ids are URL-safe slugs of the name, unique within the material.
+- `generateQuiz({ topics, chunks, count, difficulty, focusTopicIds })` returns `count` multiple-choice questions, each tied to one of the given topics, with exactly four options, one correct `answerIndex`, and a one or two sentence explanation. Questions must be answerable from the notes. When `focusTopicIds` is set, at least 70 percent of questions target those topics.
+- `explainTopic({ topic, chunks, wrongQuestions })` returns a plain-language explanation of 150 to 300 words for a student who got it wrong, plus 3 to 5 key points. It should address the misconceptions visible in `wrongQuestions` when any are given.
+- `generateFeedback({ progress, materials })` returns a study plan of 80 to 150 words: what is strong, what is weak, and the next two things to do.
+- `extractTopicsFromPdf({ title, pdfBase64, sourceName })` (Phase 3) returns `{ text, topics }`: the notes transcribed as plain text in reading order, at most 30000 characters (a longer document is transcribed from its start up to that limit), and the same 4 to 8 topics `extractTopics` would return for that text. Gemini receives the PDF as an inline document part next to the prompt, using the structured-output option the installed SDK provides. The mock returns a fixed note saying the PDF had no readable text and topics built from the file name, so the flow works without a key.
+
+Gemini implementation (`src/lib/ai/gemini`): uses `@google/genai`. The model comes from `GEMINI_MODEL`; when empty, the client lists the available models once per process and picks the newest one whose id contains "flash" and that supports content generation, so no model id is ever hard-coded. Every job asks for structured JSON output using the option the installed SDK version provides for a JSON schema (read from the SDK's type definitions, not from memory). The JSON schemas are derived from the zod schemas in `src/lib/ai/schemas.ts`. Every response is parsed and validated with zod; on failure the call is retried once with a corrective instruction, then fails with a clear error.
+
+Mock implementation (`src/lib/ai/mock`): deterministic, no network. It recognises the sample notes and returns their pre-computed topics; for other text it builds plausible topics from headings and paragraphs. Quizzes, explanations and feedback are built from the topics and key points with templates. Output must satisfy the same zod schemas.
+
+Prompts live in `src/lib/ai/gemini/prompts.ts`, written in plain English, and always state: answer only from the notes, keep language simple, output JSON that matches the schema, and no markdown.
+
+## 6. Limits and protection
+
+- `checkIpLimit`: 60 requests per minute per IP.
+- `consumeAiCall`: `DAILY_AI_CALL_CAP` (default 60) AI calls per profile per UTC day.
+- Plain-number ceilings live in `src/lib/constants.ts`, which imports nothing and is safe to import from browser code; `limits.ts` re-exports the ones server code uses. `MAX_TEXT_CHARS` 300000, `MAX_TITLE_CHARS` 120, `MAX_SOURCE_NAME_CHARS` 200, `MAX_QUIZ_QUESTIONS` 20, `MIN_EXTRACTED_CHARS` 200, `MAX_PDF_BYTES` 3 MiB, `MAX_PDF_BASE64_CHARS` 4 MiB, `MAX_UPLOAD_PDF_BYTES` 25 MiB, `REVIEW_STALE_DAYS` 3. Quiz `count` defaults to 10.
+- Nothing secret is ever sent to the browser. `/api/status` returns only booleans and the model name.
+
+## 7. Configuration and modes
+
+Two secrets, both optional for development:
+
+- `GEMINI_API_KEY`: empty means mock AI.
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: empty means in-memory store.
+
+The `RuntimeBadge` in the header shows "Mock AI" and/or "Memory store" whenever a fallback is active, so nobody mistakes mock output for the real thing. `npm run check` verifies both secrets against the real services and prints the model in use. `npm run list-models` prints the model ids the key can use. `npm run smoke:ai` runs all five AI jobs (the four text jobs on the sample notes, and the scanned-PDF job on `robot/data/test.pdf`) and validates the output shapes, in whichever mode the environment gives. `npm run test:routes` runs the three route test scripts in sequence.
+
+The check script must not delete anything, not even its own test data: the Firestore check writes and reads back one fixed document, `_health/check`, which is simply overwritten on every run.
+
+## 8. Design system
+
+Tokens are defined in `src/app/globals.css` (Tailwind 4 `@theme`): background, ink, muted, accent (teal, primary actions), accent-soft, warn (amber, weak topics), warn-soft, border, card, and the card radius. Components in `src/components/ui` (Button, Card, PageHeader, EmptyState, Badge) are the only building blocks; screens compose them and do not invent new colours or radii. Base text is 16px or larger. Layout is a single centered column with a maximum width of 48rem. Mastery bars use the accent colour, or warn when the topic is weak, wherever they appear (Results, Topics, dashboard). Every tappable control is at least 44px tall on a phone, and no screen scrolls sideways at a width of 375px.
+
+## 9. Ownership map
+
+- Foundation (done): types, env, store, api helpers, limits, profile client, status route, design tokens, UI primitives, AppShell, RuntimeBadge.
+- AI layer (done): `src/lib/ai/**`, `src/content/sample-notes.ts`, `scripts/**`, the `check`, `list-models` and `smoke:ai` npm scripts, `.env.example`.
+- Screens (done as shells against the contracts): `src/app/**` pages (not the api folder), `src/components/**` except AppShell and RuntimeBadge, `src/lib/pdf.ts`, `src/lib/hooks/**`, `src/lib/format.ts`, `src/app/dev/preview` (development only).
+- Phase 2 (done): every route is real. Ingest owns `/api/analyze` and `/api/materials/[id]` and the sample request; quiz owns `/api/quiz`, `/api/quizzes/[id]`, `/api/attempt`, `/api/attempts/[id]` and `src/lib/quiz-grading.ts`; insight owns `/api/explain`, `/api/feedback` and `/api/me`. Route tests: `scripts/test-ingest.ts`, `scripts/test-quiz.ts`, `scripts/test-insight.ts` (run with `node --env-file-if-exists=.env.local --import tsx scripts/<name>.ts`). End-to-end tests: `robot/` (Robot Framework with the Browser library on Playwright), run with `npm run test:e2e`; the suite builds and starts the app on port 3105 in forced mock mode and stops it afterwards.
+- Phase 3 (in progress since 2026-09-05), hardening: add `getAttempt(id)` to the `Store` interface (both implementations) and use it in `/api/attempts/[id]` instead of scanning `listAttempts`; throttle the `lastSeenAt` write in `FirestoreStore.getOrCreateProfile` (write only when older than ten minutes); move `MAX_TEXT_CHARS`, `MAX_TITLE_CHARS` and a new `MAX_SOURCE_NAME_CHARS` (200) into a client-safe `src/lib/constants.ts` re-exported by `limits.ts`, and use the constant in `UploadForm` and `/api/analyze`; make `scripts/check.ts` overwrite the fixed `_health/check` document instead of deleting a test profile; reword the comment in `next.config.ts` so it does not name the generated files; vary the mock quiz distractors by question index (the correct option's position keeps rotating 0, 1, 2, 3 with the question index, which the Robot suite relies on); add an npm script `test:routes` that runs the three route test scripts in sequence; in `robot/README.md` show the skip-build variable in PowerShell syntax as well as the shell form; replace the generator README with one an outsider can follow (what the app is, setup, mock mode, secrets, scripts, tests, deploy).
+- Phase 3, Tier 3 features: a "Review today" queue on the dashboard (weak topics first, then topics not practised for three days or more, each linking to its study page); a per-material mastery overview on the Topics screen (one bar per topic from progress); a scanned-PDF fallback (`/api/analyze-pdf` accepting a base64 PDF of at most `MAX_PDF_BASE64_CHARS`, 4 MiB of base64, which is a 3 MiB file, sent to Gemini as a document; the mock returns topics from the file name and a fixed note) used automatically when in-browser extraction yields under 200 characters; a design pass over every screen keeping the tokens and one primary action per screen; a phone-width check of every screen.
+- Phase 3 ownership: the contracts owner lands `src/lib/constants.ts`, the `limits.ts` re-exports, `AnalyzePdfRequest`, the `extractTopicsFromPdf` job and its schema, `Store.getAttempt` and the `lastSeenAt` throttle first, with placeholder AI bodies. Then, in parallel, the server owner has `src/app/api/**`, `src/lib/ai/**`, `src/lib/quiz-grading.ts`, `scripts/**` and the `test:routes` line in `package.json`, and the screens owner has the `src/app/**` pages (not the api folder), `src/components/**`, `src/lib/pdf.ts`, `src/lib/review.ts`, `src/lib/hooks/**` and `src/lib/format.ts`. The docs owner has `README.md`, `robot/README.md` and the comment in `next.config.ts`. The Robot owner extends `robot/**` last, once the screens are in. The coordinator keeps this document and audits every file.
+
+A change to a shared contract (`types.ts`, `api-types.ts`, the `Store` or `AiClient` interfaces) is reported to the coordinator before it is made.
+
+## 10. House rules for all code
+
+- Plain English in comments and UI text. No em dashes anywhere.
+- No tool attribution anywhere in the repository.
+- Deletions only through the project owner's recycle script; never a raw delete.
+- No commits unless the project owner asks for one.
+- Versions are read from `package.json` or the machine, never quoted from memory.

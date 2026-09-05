@@ -1,0 +1,44 @@
+import { jsonError, jsonOk, withProfile } from "@/lib/api";
+import type { AttemptSummary, MaterialResponse } from "@/lib/api-types";
+import type { Quiz } from "@/lib/types";
+
+// One material with its quiz history (as AttemptSummary, topic ids resolved
+// from each attempt's quiz) and this profile's progress on that material's
+// topics.
+export const GET = withProfile<{ id: string }>(async ({ profile, store, params }) => {
+  const material = await store.getMaterial(params.id);
+  if (!material || material.profileId !== profile.id) {
+    return jsonError(404, "Not found");
+  }
+
+  const attempts = await store.listAttempts(profile.id, material.id);
+
+  // Each attempt's quiz is loaded at most once, even when several attempts
+  // share the same quiz.
+  const quizCache = new Map<string, Quiz | null>();
+  async function loadQuiz(quizId: string): Promise<Quiz | null> {
+    if (!quizCache.has(quizId)) {
+      quizCache.set(quizId, await store.getQuiz(quizId));
+    }
+    return quizCache.get(quizId) ?? null;
+  }
+
+  const attemptSummaries: AttemptSummary[] = [];
+  for (const attempt of attempts) {
+    const quiz = await loadQuiz(attempt.quizId);
+    attemptSummaries.push({
+      id: attempt.id,
+      quizId: attempt.quizId,
+      score: attempt.score,
+      questionCount: attempt.answers.length,
+      completedAt: attempt.completedAt,
+      topicIds: quiz ? quiz.topicIds : [],
+    });
+  }
+
+  const progress = (await store.listTopicProgress(profile.id)).filter(
+    (entry) => entry.materialId === material.id
+  );
+
+  return jsonOk<MaterialResponse>({ material, attempts: attemptSummaries, progress });
+});
