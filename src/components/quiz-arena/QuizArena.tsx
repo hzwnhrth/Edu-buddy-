@@ -26,6 +26,8 @@ import type {
 import type { Difficulty } from "@/lib/types";
 import { useApiQuery } from "@/lib/hooks/useApi";
 import { apiFetch } from "@/lib/profile-client";
+import { TEKS_SEJARAH_T4_BANK, TEKS_SEJARAH_T4_TITLE } from "@/content/teks-sejarah-t4-bank";
+import { newCardSchedule, scheduleReview, type CardSchedule } from "@/lib/spaced-repetition";
 
 // Quiz Arena: generates, renders and grades quizzes. The student picks a
 // difficulty and a question count, answers one question at a time, checks
@@ -159,6 +161,8 @@ export function QuizArena() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [error, setError] = useState("");
   const [textInput, setTextInput] = useState("");
+  const [bankMode, setBankMode] = useState(false);
+  const [bankSchedules, setBankSchedules] = useState<CardSchedule[]>([]);
 
   const materialId = storedMaterialId;
   const materialQuery = useApiQuery<MaterialResponse>(
@@ -218,6 +222,39 @@ export function QuizArena() {
     }
   };
 
+  const handleStartHistoryBank = () => {
+    let saved: CardSchedule[] = [];
+    try {
+      const raw = window.localStorage.getItem("edubuddy.srs.teks-sejarah-t4");
+      saved = raw ? (JSON.parse(raw) as CardSchedule[]) : [];
+    } catch {
+      saved = [];
+    }
+    const schedules = TEKS_SEJARAH_T4_BANK.map((question) =>
+      saved.find((card) => card.cardId === question.qid) ?? newCardSchedule(question.qid)
+    );
+    const dueIds = new Set(schedules.filter((card) => new Date(card.dueAt).getTime() <= Date.now()).map((card) => card.cardId));
+    const dueQuestions = TEKS_SEJARAH_T4_BANK.filter((question) => dueIds.has(question.qid));
+    const questions = (dueQuestions.length > 0 ? dueQuestions : TEKS_SEJARAH_T4_BANK).slice(0, numQuestions);
+    const bankQuiz: PublicQuiz = {
+      id: "teks-sejarah-t4-bank",
+      materialId: "teks-sejarah-t4",
+      topicIds: ["warisan-negara-bangsa"],
+      difficulty: "medium",
+      questions,
+      createdAt: new Date().toISOString(),
+    };
+    setBankSchedules(schedules);
+    setBankMode(true);
+    setQuiz(bankQuiz);
+    setCurrentQ(0);
+    setAnswers([]);
+    setSelectedOption(null);
+    setResults(null);
+    setShowExplanation(false);
+    setError("");
+  };
+
   const handleSelectOption = (index: number) => {
     if (showExplanation) return;
     setSelectedOption(index);
@@ -231,6 +268,36 @@ export function QuizArena() {
     if (selectedOption === null || !quiz) return;
 
     const newAnswers = [...answers, selectedOption];
+
+    if (bankMode) {
+      const card = bankSchedules.find((entry) => entry.cardId === quiz.questions[currentQ].qid);
+      if (card) {
+        const updated = bankSchedules.map((entry) =>
+          entry.cardId === card.cardId ? scheduleReview(card, selectedOption === quiz.questions[currentQ].correctAnswerIndex ? "good" : "again") : entry
+        );
+        setBankSchedules(updated);
+        try {
+          window.localStorage.setItem("edubuddy.srs.teks-sejarah-t4", JSON.stringify(updated));
+        } catch {
+          // The bank remains usable when browser storage is unavailable.
+        }
+      }
+      if (currentQ < quiz.questions.length - 1) {
+        setAnswers(newAnswers);
+        setCurrentQ(currentQ + 1);
+        setSelectedOption(null);
+        setShowExplanation(false);
+        return;
+      }
+      const correctCount = newAnswers.filter((answer, index) => answer === quiz.questions[index].correctAnswerIndex).length;
+      setAnswers(newAnswers);
+      setResults({
+        attempt: { id: `local-${Date.now()}`, profileId: "local", quizId: quiz.id, materialId: quiz.materialId, answers: quiz.questions.map((question, index) => ({ qid: question.qid, chosenIndex: newAnswers[index], correct: newAnswers[index] === question.correctAnswerIndex })), score: correctCount / quiz.questions.length, completedAt: new Date().toISOString() },
+        results: quiz.questions.map((question, index) => ({ qid: question.qid, topicId: question.topicId, stem: question.stem, options: question.options, chosenIndex: newAnswers[index], correct: newAnswers[index] === question.correctAnswerIndex, answerIndex: question.correctAnswerIndex, explanation: question.explanation })),
+        topicResults: [{ topicId: "warisan-negara-bangsa", name: "Warisan Negara Bangsa", correct: correctCount, total: quiz.questions.length, mastery: correctCount / quiz.questions.length, weak: correctCount / quiz.questions.length < 0.6 }],
+      });
+      return;
+    }
 
     if (currentQ < quiz.questions.length - 1) {
       setAnswers(newAnswers);
@@ -299,6 +366,7 @@ export function QuizArena() {
     setResults(null);
     setShowExplanation(false);
     setError("");
+    setBankMode(false);
   };
 
   const showMaterialError = Boolean(materialId && materialQuery.error);
@@ -417,6 +485,17 @@ export function QuizArena() {
               >
                 <HiOutlineLightBulb /> Start Quiz
               </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleStartHistoryBank}
+                style={{ width: "100%", marginTop: "0.75rem", borderRadius: "9999px" }}
+              >
+                <HiOutlineBookOpen /> Practise {TEKS_SEJARAH_T4_TITLE}
+              </button>
+              <p style={{ fontSize: "0.78rem", color: "#9CA3AF", marginTop: "0.6rem" }}>
+                Reviews are scheduled automatically using spaced repetition.
+              </p>
             </div>
           </motion.div>
         </div>
@@ -544,6 +623,17 @@ export function QuizArena() {
           )}
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center", marginTop: "1.5rem" }}>
+            {bankMode ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleStartHistoryBank}
+                style={{ borderRadius: "9999px" }}
+              >
+                <HiOutlineArrowPath /> Practise bank again
+              </button>
+            ) : (
+              <>
             {weakestTopicId ? (
               <Link
                 href={`/progress?material=${results.attempt.materialId}&topic=${weakestTopicId}`}
@@ -563,9 +653,11 @@ export function QuizArena() {
               onClick={handlePractiseWeak}
               disabled={weakTopics.length === 0}
               style={{ borderRadius: "9999px" }}
-            >
-              <HiOutlineArrowPath /> Practise weak topics
-            </button>
+              >
+                <HiOutlineArrowPath /> Practise weak topics
+              </button>
+              </>
+            )}
           </div>
           {weakTopics.length === 0 && (
             <p style={{ textAlign: "center", fontSize: "0.85rem", color: "#9CA3AF", marginTop: "0.6rem" }}>
