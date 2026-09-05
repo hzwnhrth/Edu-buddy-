@@ -1,6 +1,6 @@
 import type { Topic } from "@/lib/types";
 
-// Small, dependency-free text helpers shared by the Gemini and mock AI
+// Small, dependency-free text helpers shared by the OpenRouter and mock AI
 // implementations: turning a topic name into a stable id, splitting raw
 // notes into chunks small enough to send to the model, and picking which
 // chunks are worth sending for a given set of topics.

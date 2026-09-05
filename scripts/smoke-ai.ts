@@ -12,17 +12,20 @@ import {
   topicsSchema,
 } from "@/lib/ai/schemas";
 import { selectChunks, splitIntoChunks } from "@/lib/ai/text";
+import { AiError } from "@/lib/ai/types";
 import type { ChatTutorOutput, ExplainTopicOutput, ExtractTopicsFromPdfOutput } from "@/lib/ai/types";
 import type { MaterialNotes, Question, Topic, TopicProgress } from "@/lib/types";
 
 // End-to-end check of the AI layer, in whatever mode the environment gives
-// (mock when GEMINI_API_KEY is unset, real Gemini otherwise): run all seven
-// AiClient jobs, the five text jobs chained on the bundled sample notes the
-// way real route code would chain them (topics, quiz, explanation, study
-// notes, feedback and the tutor chat), plus the scanned-PDF job on
+// (mock when OPENROUTER_API_KEY is unset, real OpenRouter otherwise): run
+// all seven AiClient jobs, the five text jobs chained on the bundled sample
+// notes the way real route code would chain them (topics, quiz, explanation,
+// study notes, feedback and the tutor chat), plus the scanned-PDF job on
 // robot/data/test.pdf, and validate every output against the zod schemas in
-// schemas.ts plus the id fields those schemas do not cover. Exits 1 on any
-// failure so it can be used as a CI-style gate.
+// schemas.ts plus the id fields those schemas do not cover. The scanned-PDF
+// job is retired in the OpenRouter client, so in real mode it must fail with
+// exactly that student-readable AiError instead of producing output. Exits 1
+// on any failure so it can be used as a CI-style gate.
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -189,15 +192,32 @@ async function main(): Promise<void> {
 
   const pdfPath = path.join(process.cwd(), "robot", "data", "test.pdf");
   const pdfBuffer = await readFile(pdfPath);
-  const pdfResult = await ai.extractTopicsFromPdf({
+  const pdfInput = {
     title: "Smoke test PDF",
     pdfBase64: pdfBuffer.toString("base64"),
     sourceName: "test.pdf",
-  });
-  validatePdfTopics(pdfResult);
-  console.log(
-    `OK: extractTopicsFromPdf -> ${pdfResult.text.length} transcribed characters, topics: ${pdfResult.topics.map((topic) => topic.name).join(", ")}`
-  );
+  };
+
+  if (description.provider === "mock") {
+    const pdfResult = await ai.extractTopicsFromPdf(pdfInput);
+    validatePdfTopics(pdfResult);
+    console.log(
+      `OK: extractTopicsFromPdf -> ${pdfResult.text.length} transcribed characters, topics: ${pdfResult.topics.map((topic) => topic.name).join(", ")}`
+    );
+  } else {
+    // The OpenRouter client retires the scanned-PDF job, so in real mode
+    // the call must fail with the retirement message, and anything else is
+    // a smoke failure.
+    try {
+      await ai.extractTopicsFromPdf(pdfInput);
+      throw new Error("extractTopicsFromPdf answered, but it is retired in the OpenRouter client.");
+    } catch (error) {
+      if (!(error instanceof AiError)) {
+        throw error;
+      }
+      console.log(`OK: extractTopicsFromPdf -> retired in real mode as expected ("${error.message}")`);
+    }
+  }
 
   console.log("\nAll seven AI jobs produced schema-valid output.");
 }

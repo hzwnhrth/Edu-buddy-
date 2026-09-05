@@ -3,7 +3,11 @@ import type { Difficulty } from "@/lib/types";
 // Plain-English prompt builders for the AI jobs. Every prompt states,
 // in some form: you are helping a university student study, use only the
 // notes given, keep language simple and clear, answer with JSON matching
-// the schema and nothing else, and no markdown in the answer.
+// the schema and nothing else, and no markdown in the answer. The wording
+// is copied unchanged from the former Gemini prompts so mock and real
+// output stay comparable; the scanned-PDF prompt is gone because the
+// OpenRouter client retires that job (see extractTopicsFromPdf in
+// index.ts).
 
 const ROLE_LINE =
   "You are helping a university student study from their own lecture notes.";
@@ -134,30 +138,6 @@ export function buildExplainTopicPrompt(args: {
     withNotes(null, notesText),
     "",
     "Write explanation as 150 to 300 words of plain, encouraging prose (not a list) that teaches the topic clearly and, where relevant, clears up the misunderstandings above. Then give keyPoints: 3 to 5 short takeaways a student should remember.",
-    "",
-    OUTPUT_LINE,
-  ].join("\n");
-}
-
-// extractTopicsFromPdf: the notes arrive as an attached PDF document part
-// rather than as text in the prompt (see generateJson's `parts` option in
-// client.ts). Transcribe it first, then extract topics the same way
-// buildExtractTopicsPrompt does for pasted text.
-export function buildExtractTopicsFromPdfPrompt(title: string, sourceName: string): string {
-  return [
-    ROLE_LINE,
-    "Use only the document attached to this message. Do not add facts, names or numbers that are not in it.",
-    LANGUAGE_LINE,
-    "",
-    `The attached file is named "${sourceName}", uploaded with the title "${title}".`,
-    "First transcribe the document as plain text, in reading order, at most 30000 characters. If it is longer than that, transcribe from the start and stop at 30000 characters.",
-    "",
-    "Then, from that transcription, pick between 4 and 8 main topics that, together, cover the whole of the transcription from start to end. Do not leave out a major section, and do not list the same idea twice under two different names: every topic must be clearly different from every other topic.",
-    "",
-    "For each topic give:",
-    "- name: a short topic name, at most 6 words",
-    "- summary: one sentence describing the topic",
-    "- keyPoints: 3 to 5 short factual statements about the topic, each one actually stated in the document",
     "",
     OUTPUT_LINE,
   ].join("\n");

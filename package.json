@@ -14,7 +14,6 @@
     "test:e2e": "py -m robot --outputdir robot/results robot/suites"
   },
   "dependencies": {
-    "@google/genai": "^2.21.0",
     "@opentelemetry/api": "^1.9.1",
     "firebase-admin": "^14.3.0",
     "framer-motion": "^13.2.0",

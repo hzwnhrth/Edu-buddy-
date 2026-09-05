@@ -2,8 +2,8 @@ import type { RuntimeStatus } from "@/lib/types";
 
 // The subset of process.env this app reads, trimmed and parsed once per process.
 export interface Env {
-  geminiApiKey: string;
-  geminiModel: string;
+  openrouterApiKey: string;
+  openrouterModel: string;
   firebaseServiceAccountJson: string;
   firebaseDatabaseUrl: string;
   dailyAiCallCap: number;
@@ -21,8 +21,8 @@ declare global {
 }
 
 function readEnv(): Env {
-  const geminiApiKey = (process.env.GEMINI_API_KEY ?? "").trim();
-  const geminiModel = (process.env.GEMINI_MODEL ?? "").trim();
+  const openrouterApiKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const openrouterModel = (process.env.OPENROUTER_MODEL ?? "").trim();
   const firebaseServiceAccountJson = (process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? "").trim();
   const firebaseDatabaseUrl = (process.env.FIREBASE_DATABASE_URL ?? "").trim();
   const rawCap = (process.env.DAILY_AI_CALL_CAP ?? "").trim();
@@ -38,8 +38,8 @@ function readEnv(): Env {
       : parsedPerMinute;
 
   return {
-    geminiApiKey,
-    geminiModel,
+    openrouterApiKey,
+    openrouterModel,
     firebaseServiceAccountJson,
     firebaseDatabaseUrl,
     dailyAiCallCap,
@@ -62,8 +62,9 @@ export function getEnv(): Env {
 export function getRuntimeStatus(): RuntimeStatus {
   const env = getEnv();
   return {
-    ai: env.geminiApiKey ? "gemini" : "mock",
-    store: env.firebaseServiceAccountJson ? "firestore" : "memory",
-    model: env.geminiModel || null,
+    ai: env.openrouterApiKey ? "openrouter" : "mock",
+    store:
+      env.firebaseServiceAccountJson && env.firebaseDatabaseUrl ? "rtdb" : "memory",
+    model: env.openrouterModel || null,
   };
 }

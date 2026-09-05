@@ -141,7 +141,7 @@ export interface Profile {
 
 // What backends the running app is actually wired to, for display and diagnostics.
 export interface RuntimeStatus {
-  ai: "gemini" | "mock";
-  store: "firestore" | "memory";
+  ai: "openrouter" | "mock";
+  store: "rtdb" | "memory";
   model: string | null;
 }

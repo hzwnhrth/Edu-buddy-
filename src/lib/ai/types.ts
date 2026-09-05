@@ -80,19 +80,20 @@ export interface ChatTutorOutput {
 // Which AI backend actually answered, and which model if known. Mirrors the
 // ai/model fields of RuntimeStatus but is scoped to the AiClient itself.
 export interface AiDescription {
-  provider: "gemini" | "mock";
+  provider: "openrouter" | "mock";
   model: string | null;
 }
 
 // The one interface route code is allowed to depend on. Never import
-// GeminiAi or MockAi directly outside src/lib/ai; call getAi() instead.
+// OpenRouterAi or MockAi directly outside src/lib/ai; call getAi() instead.
 export interface AiClient {
   extractTopics(input: ExtractTopicsInput): Promise<Topic[]>;
   generateQuiz(input: GenerateQuizInput): Promise<Question[]>;
   explainTopic(input: ExplainTopicInput): Promise<ExplainTopicOutput>;
   generateFeedback(input: GenerateFeedbackInput): Promise<string>;
-  // The PDF goes to the model as a document; the model transcribes it as
-  // plain text and extracts the topics from that transcription.
+  // Scanned-PDF fallback. The mock fakes a transcription; the OpenRouter
+  // client has retired the job (Gemma cannot receive PDF bytes over chat
+  // completions) and throws AiError with a student-readable message.
   extractTopicsFromPdf(input: ExtractTopicsFromPdfInput): Promise<ExtractTopicsFromPdfOutput>;
   // Study notes written only from the material: sections, summary, key
   // points and flashcards, cached on the material by /api/notes.

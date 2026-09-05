@@ -69,8 +69,9 @@ Everything lands under `robot/results`, which is not committed:
 ## Mock mode
 
 `Start App` (in `robot/resources/app.resource`) launches `npm start` with
-`GEMINI_API_KEY` and `FIREBASE_SERVICE_ACCOUNT_JSON` both forced to empty
-strings for that process, regardless of anything set in a local `.env.local`.
+`OPENROUTER_API_KEY`, `FIREBASE_SERVICE_ACCOUNT_JSON` and
+`FIREBASE_DATABASE_URL` all forced to empty strings for that process,
+regardless of anything set in a local `.env.local`.
 That keeps the app on the deterministic mock AI and the in-memory store, so
 the suite needs no API keys or service account and gives the same answers
 every run. The header badges "Mock AI" and "Memory store" are part of what

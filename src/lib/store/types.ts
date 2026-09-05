@@ -8,7 +8,7 @@ import type {
 } from "@/lib/types";
 
 // The persistence contract the rest of the app codes against. MemoryStore and
-// FirestoreStore both implement this so routes and AI logic never branch on
+// RtdbStore both implement this so routes and AI logic never branch on
 // which backend is active.
 export interface Store {
   getOrCreateProfile(id: string): Promise<Profile>;

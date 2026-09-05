@@ -43,9 +43,10 @@ Build App
 
 Start App
     [Documentation]    Starts "npm start -- -p ${PORT}" in APP_DIR in the
-    ...    background, forcing mock mode by overriding GEMINI_API_KEY and
-    ...    FIREBASE_SERVICE_ACCOUNT_JSON to empty strings for this process
-    ...    only (even if a .env.local with real secrets exists), and raising
+    ...    background, forcing mock mode by overriding OPENROUTER_API_KEY,
+    ...    FIREBASE_SERVICE_ACCOUNT_JSON and FIREBASE_DATABASE_URL to empty
+    ...    strings for this process only (even if a .env.local with real
+    ...    secrets exists), and raising
     ...    the per-IP request cap through IP_REQUESTS_PER_MINUTE=1000 so the
     ...    many profiled requests a full run makes inside one minute cannot
     ...    trip the rate limiter (the app's default is 60), then waits until
@@ -56,8 +57,9 @@ Start App
     ${process} =    Start Process
     ...    npm.cmd    start    --    -p    ${PORT}
     ...    cwd=${APP_DIR}
-    ...    env:GEMINI_API_KEY=
+    ...    env:OPENROUTER_API_KEY=
     ...    env:FIREBASE_SERVICE_ACCOUNT_JSON=
+    ...    env:FIREBASE_DATABASE_URL=
     ...    env:IP_REQUESTS_PER_MINUTE=1000
     ...    alias=edubuddy_server
     ...    stdout=${OUTPUTDIR}${/}server_stdout.log

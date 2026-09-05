@@ -72,9 +72,9 @@ declare global {
 
 // Lazily creates (or reuses) the admin app from FIREBASE_SERVICE_ACCOUNT_JSON
 // and returns the Realtime Database for FIREBASE_DATABASE_URL, guarded so a
-// hot reload or a second caller never initializes the app twice. The app
-// setup mirrors FirestoreStore.getDb, so whichever backend runs first
-// initializes the shared default app and the other one reuses it.
+// hot reload or a second caller never initializes the app twice. RtdbStore
+// (src/lib/store/rtdb.ts) shares this same setup, so whichever backend runs
+// first initializes the shared default app and the other one reuses it.
 export function getRtdb(): Database {
   if (globalThis.__edubuddyRtdb) {
     return globalThis.__edubuddyRtdb;

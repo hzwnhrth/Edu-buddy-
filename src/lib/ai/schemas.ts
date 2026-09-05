@@ -3,7 +3,7 @@ import { z } from "zod";
 // Zod schemas for what the MODEL returns. The model never invents ids: topic
 // ids come from uniqueTopicIds() and question ids from crypto.randomUUID(),
 // both added by our own client code after validation. These schemas are also
-// the source of the JSON Schema sent to Gemini for structured output (see
+// the source of the JSON Schema sent to the model for structured output (see
 // jsonSchemaFor below) and are reused by the mock implementation and the
 // smoke test to check that every AI output, real or mock, has the same shape.
 
@@ -62,7 +62,7 @@ export type PdfTopicsPayload = z.infer<typeof pdfTopicsSchema>;
 // body each, a summary, 5 to 8 key points and 6 to 10 flashcards, all
 // written only from the notes. The character limits approximate the spec's
 // word limits (section bodies of 80 to 200 words, a 40 to 80 word summary)
-// and are deliberately generous, since Gemini does not enforce string
+// and are deliberately generous, since the model does not enforce string
 // lengths in structured output; the app validates with these schemas and
 // the mock builds well inside them.
 export const notesSchema = z.object({
@@ -102,11 +102,11 @@ export type ChatPayload = z.infer<typeof chatSchema>;
 // exported from node_modules/zod/v4/core/json-schema-processors.d.ts and
 // re-exported through node_modules/zod/v4/classic/external.d.ts and the
 // package root node_modules/zod/index.d.cts. It defaults to JSON Schema draft
-// 2020-12, which covers every property Gemini's responseJsonSchema documents
-// as supported (type, properties, required, items, minItems, maxItems,
-// minimum, maximum, enum, anyOf, and so on). The one thing it adds that
-// Gemini does not document is the root "$schema" key, which we drop here
-// since it describes the schema format rather than the data shape.
+// 2020-12, which covers every property the OpenRouter json_schema response
+// format accepts (type, properties, required, items, minItems, maxItems,
+// minimum, maximum, enum, anyOf, and so on). The one thing it adds that is
+// better dropped is the root "$schema" key, which describes the schema
+// format rather than the data shape.
 export function jsonSchemaFor<T>(schema: z.ZodType<T>): Record<string, unknown> {
   const full = z.toJSONSchema(schema) as Record<string, unknown>;
   const rest = { ...full };

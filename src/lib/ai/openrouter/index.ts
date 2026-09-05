@@ -1,22 +1,19 @@
-import type { Part } from "@google/genai";
 import type { MaterialNotes, Question, Topic } from "@/lib/types";
-import { generateJson, resolveModel } from "@/lib/ai/gemini/client";
+import { generateJson, lastAnsweredModel, resolveModel } from "@/lib/ai/openrouter/client";
 import {
   buildChatTutorPrompt,
   buildExplainTopicPrompt,
-  buildExtractTopicsFromPdfPrompt,
   buildExtractTopicsPrompt,
   buildGenerateFeedbackPrompt,
   buildGenerateNotesPrompt,
   buildGenerateQuizPrompt,
   type FeedbackPromptTopic,
-} from "@/lib/ai/gemini/prompts";
+} from "@/lib/ai/openrouter/prompts";
 import {
   chatSchema,
   explanationSchema,
   feedbackSchema,
   notesSchema,
-  pdfTopicsSchema,
   quizSchema,
   topicsSchema,
 } from "@/lib/ai/schemas";
@@ -82,9 +79,10 @@ function matchTopicId(topicName: string, topics: Topic[]): string {
   return topics[0].id;
 }
 
-// The real AI backend: Gemini through @google/genai. Route code should
-// never construct this directly, only through getAi() in src/lib/ai/index.ts.
-export class GeminiAi implements AiClient {
+// The real AI backend: Google Gemma through OpenRouter's REST API (plain
+// fetch, no SDK). Route code should never construct this directly, only
+// through getAi() in src/lib/ai/index.ts.
+export class OpenRouterAi implements AiClient {
   async extractTopics(input: ExtractTopicsInput): Promise<Topic[]> {
     const chunks = splitIntoChunks(input.text);
     const notesText = firstChars(chunks, EXTRACT_TOPICS_CHAR_BUDGET);
@@ -170,25 +168,22 @@ export class GeminiAi implements AiClient {
     return payload.feedback;
   }
 
-  // The PDF is sent as an inline document part alongside the prompt text
-  // (see the Part/inlineData citation in gemini/client.ts); Gemini
-  // transcribes it and extracts topics from that transcription in the same
-  // structured-JSON call.
+  // Retired in the OpenRouter client, on purpose and gracefully: the chat
+  // completions endpoint used here (POST /api/v1/chat/completions) takes
+  // text messages only, and Gemma over OpenRouter has no way to receive the
+  // base64 PDF bytes the way the former Gemini client attached them as an
+  // inline document part, so a scanned PDF cannot be transcribed any more.
+  // Rather than pretend, this throws the AiError below; /api/analyze-pdf
+  // turns it into a 503 that shows the student a clear instruction to use a
+  // PDF with selectable text or paste the notes. MockAi keeps its fake
+  // transcription so the flow still works without a key.
   async extractTopicsFromPdf(input: ExtractTopicsFromPdfInput): Promise<ExtractTopicsFromPdfOutput> {
-    const prompt = buildExtractTopicsFromPdfPrompt(input.title, input.sourceName);
-    const pdfPart: Part = { inlineData: { data: input.pdfBase64, mimeType: "application/pdf" } };
-
-    const payload = await generateJson({ prompt, schema: pdfTopicsSchema, parts: [pdfPart] });
-
-    const ids = uniqueTopicIds(payload.topics.map((topic) => topic.name));
-    const topics: Topic[] = payload.topics.map((topic, index) => ({
-      id: ids[index],
-      name: topic.name,
-      summary: topic.summary,
-      keyPoints: topic.keyPoints,
-    }));
-
-    return { text: payload.text, topics };
+    // The input is deliberately unused: whatever was uploaded, the answer is
+    // the same student-readable retirement message.
+    void input;
+    throw new AiError(
+      "This PDF has no readable text, and the AI service cannot read scanned PDFs. Please upload a PDF with selectable text, or paste your notes instead."
+    );
   }
 
   async generateNotes(input: GenerateNotesInput): Promise<MaterialNotes> {
@@ -221,6 +216,9 @@ export class GeminiAi implements AiClient {
   }
 
   async describe(): Promise<AiDescription> {
-    return { provider: "gemini", model: await resolveModel() };
+    // Report the model that actually answered the last call (the chain may
+    // have fallen back from the free to the paid Gemma); before any call,
+    // the first chain entry is the honest guess.
+    return { provider: "openrouter", model: lastAnsweredModel() ?? resolveModel() };
   }
 }
