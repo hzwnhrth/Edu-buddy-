@@ -4,8 +4,9 @@ Documentation     The dashboard once there is real activity behind it: the
 ...               counts, the "Review today" queue listing every weak topic
 ...               with its "Study this topic" link, and a refreshed study
 ...               plan that names a real topic. The suite builds its own
-...               activity first (sample notes plus two 10 question quizzes
-...               choosing option 1), because every suite opens a fresh
+...               activity first (sample notes plus two seeded 30 percent
+...               attempts through the API, since the Quiz Arena is now the
+...               browser-only deck quiz), because every suite opens a fresh
 ...               browser context and therefore a fresh profile.
 Resource          ../resources/app.resource
 Suite Setup       Open App
@@ -25,12 +26,8 @@ Dashboard Reflects The Sample And Two Quizzes
     ...    sample material in the list.
     ${material_url} =    Open Sample Notes From Dashboard
     Set Suite Variable    ${MATERIAL_URL}    ${material_url}
-    Start Quiz With Question Count    10
-    Answer Quiz Choosing First Option    10
-    Wait For Quiz Results
-    Start Quiz With Question Count    10
-    Answer Quiz Choosing First Option    10
-    Wait For Quiz Results
+    Seed Graded Quiz Attempt
+    Seed Graded Quiz Attempt
     Take Screenshot    05-activity-built
 
     Go To    ${BASE_URL}/dashboard

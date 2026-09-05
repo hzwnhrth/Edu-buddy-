@@ -31,11 +31,10 @@ Notes Generator Fits Phone Width
     Take Screenshot    08-notes
 
 Quiz Start Screen Fits Phone Width
-    [Documentation]    A fresh profile has no active material, so the quiz
-    ...    start screen shows its paste-content card; that is what this
-    ...    waits for before measuring.
+    [Documentation]    The quiz start screen is now the deck picker; that
+    ...    is what this waits for before measuring.
     Go To    ${BASE_URL}/quiz
-    Wait For Elements State    text=Paste your study content    visible    timeout=15s
+    Wait For Elements State    text="Select a topic deck"    visible    timeout=15s
     Page Must Not Scroll Sideways
     Take Screenshot    08-quiz
 

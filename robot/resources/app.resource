@@ -152,15 +152,15 @@ Open Sample Notes From Dashboard
     RETURN    ${url}
 
 Start Quiz With Question Count
-    [Documentation]    Starts a quiz at /quiz for the context's active
-    ...    material: waits for the green "Study content loaded" pill (which
-    ...    proves the active material id was found and its material fetched),
-    ...    picks ``count`` in the question-count select, clicks Start Quiz,
-    ...    and waits out the "Generating your quiz..." loading card until the
-    ...    first question's options and "Check Answer" button are ready.
+    [Documentation]    Starts a deck quiz at /quiz: waits for the topic
+    ...    deck picker (the Quiz Arena is a self-contained spaced-repetition
+    ...    quiz, no material needed), keeps the first deck selected, picks
+    ...    ``count`` in the question-count select, clicks Start Quiz, and
+    ...    waits until the first question's options and "Check Answer" button
+    ...    are ready.
     [Arguments]    ${count}
     Go To    ${BASE_URL}/quiz
-    Wait For Elements State    text=Study content loaded    visible    timeout=20s
+    Wait For Elements State    text="Select a topic deck"    visible    timeout=20s
     Select Options By    css=select    value    ${count}
     Click    "Start Quiz"
     Wait For Elements State    "Check Answer"    visible    timeout=20s
@@ -174,10 +174,9 @@ Answer Quiz Choosing First Option
     ...    "2/10"), because the answer card animates out and in and clicking
     ...    the first option too early could hit the outgoing card.
     ...
-    ...    With the mock AI this exact procedure scores 30 percent on a 10
-    ...    question quiz over the sample notes (the correct option sits at
-    ...    position 1 on questions 1, 5 and 9 only), which is what the quiz
-    ...    suites assert.
+    ...    Deck questions and options are scrambled every round, so the
+    ...    score this procedure produces varies; suites assert on shapes
+    ...    (a percentage, ten result cards), never on an exact score.
     [Arguments]    ${questions}=10
     FOR    ${i}    IN RANGE    ${questions}
         Click    css=.quiz-option >> nth=0
@@ -191,8 +190,24 @@ Answer Quiz Choosing First Option
 
 Wait For Quiz Results
     [Documentation]    Waits for the results view to replace the question
-    ...    flow after "Finish Quiz". There is no route change any more (the
-    ...    whole quiz lives at /quiz), so the score circle element is what
-    ...    this waits for; a brief "Grading your answers..." loading card
-    ...    sits between the click and the results.
+    ...    flow after "Finish Quiz". There is no route change (the whole
+    ...    quiz lives at /quiz) and no server round trip, so the score
+    ...    circle element is what this waits for.
     Wait For Elements State    css=.score-value    visible    timeout=20s
+
+Seed Graded Quiz Attempt
+    [Documentation]    Creates one graded 10-question attempt on the
+    ...    context's active material through the API: POST /api/quiz (the
+    ...    mock AI serves the deterministic sample quiz) then POST
+    ...    /api/attempt answering option 1 everywhere, which scores 30
+    ...    percent. Used by the dashboard and progress suites to give the
+    ...    profile real history, since the Quiz Arena itself is now the
+    ...    browser-only spaced-repetition deck quiz and never calls these
+    ...    routes. Fails unless the attempt is stored (helper exit code 0).
+    ${profile_id} =    Get Local Storage Item    edubuddy.profileId
+    ${material_id} =    Get Local Storage Item    edubuddy.activeMaterialId
+    ${result} =    Run Process
+    ...    py    ${CURDIR}${/}seed_attempt.py    ${BASE_URL}    ${profile_id}    ${material_id}
+    ...    timeout=60s    on_timeout=kill
+    Should Be Equal As Integers    ${result.rc}    0
+    ...    msg=Seeding a graded attempt failed: ${result.stdout} ${result.stderr}

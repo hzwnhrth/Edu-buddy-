@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   HiOutlineArrowPath,
@@ -12,50 +11,51 @@ import {
   HiOutlineLightBulb,
   HiOutlineXCircle,
 } from "react-icons/hi2";
-import { getActiveMaterialId, setActiveMaterialId } from "@/lib/active-material";
-import type {
-  AnalyzeRequest,
-  AnalyzeResponse,
-  AttemptRequest,
-  AttemptResponse,
-  MaterialResponse,
-  PublicQuiz,
-  QuizRequest,
-  QuizResponse,
-} from "@/lib/api-types";
-import type { Difficulty } from "@/lib/types";
-import { useApiQuery } from "@/lib/hooks/useApi";
-import { apiFetch } from "@/lib/profile-client";
-import { TEKS_SEJARAH_T4_BANK, TEKS_SEJARAH_T4_TITLE } from "@/content/teks-sejarah-t4-bank";
-import { newCardSchedule, scheduleReview, type CardSchedule } from "@/lib/spaced-repetition";
+import type { PublicQuiz } from "@/lib/api-types";
+import { DECK_OPTIONS, type QuizBank } from "@/content/quiz-banks";
+import {
+  bankForQid,
+  buildSessionQuestions,
+  deckDueCount,
+  loadSchedules,
+  nextDueLabel,
+  saveSchedules,
+  type SchedulesByBank,
+} from "@/lib/quiz-bank";
+import { scheduleReview, type CardSchedule } from "@/lib/spaced-repetition";
 
-// Quiz Arena: generates, renders and grades quizzes. The student picks a
-// difficulty and a question count, answers one question at a time, checks
-// each answer against the key the quiz response carries, and lands on a
-// results view with per question detail and per topic mastery.
+// Quiz Arena: a self-contained spaced-repetition quiz. The student picks a
+// chapter deck (or the mix of every chapter), answers one shuffled question
+// at a time, checks each answer against the key, and lands on a local results
+// view. Every answer feeds the SM-2-style scheduler of its own chapter's
+// pool, which decides when the question comes back: correct answers graduate
+// the interval, wrong answers relearn it in ten minutes.
 
-const DIFFICULTY_CONFIG: Record<Difficulty, { label: string; color: string; bg: string }> = {
-  easy: { label: "Easy", color: "#22C55E", bg: "#DCFCE7" },
-  medium: { label: "Medium", color: "#F59E0B", bg: "#FEF3C7" },
-  hard: { label: "Hard", color: "#EF4444", bg: "#FEE2E2" },
-};
+const SINGLE_DECK_COUNTS = [3, 5, 8, 10];
+const MIXED_DECK_COUNTS = [10, 20, 30, 40];
 
-const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard"];
-const QUESTION_COUNTS = [3, 5, 8, 10];
-const NOT_IMPLEMENTED_MESSAGE = "Not implemented yet";
-
-interface LoadingView {
-  title: string;
-  caption: string;
+interface LocalResult {
+  qid: string;
+  stem: string;
+  options: string[];
+  chosenIndex: number;
+  correct: boolean;
+  correctAnswerIndex: number;
+  explanation: string;
 }
 
-function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Something went wrong";
+interface TopicCard {
+  topicName: string;
+  correct: number;
+  total: number;
+  weak: boolean;
 }
 
-// A route that answers with the 501 stub body is "not ready", not a failure.
-function displayError(message: string): string {
-  return message === NOT_IMPLEMENTED_MESSAGE ? "This part is not ready yet." : message;
+interface LocalResults {
+  score: number;
+  results: LocalResult[];
+  topicCards: TopicCard[];
+  nextDue: string;
 }
 
 function verdictText(pct: number): string {
@@ -69,69 +69,6 @@ function masteryPercent(mastery: number): number {
   return Math.round(mastery * 100);
 }
 
-// Mirrors the answers given so far into sessionStorage keyed by the quiz id,
-// shaped { qid: chosenIndex } like the old runner stored them. Storage being
-// unavailable (private mode, quota) must never break the quiz itself.
-function mirrorAnswers(quiz: PublicQuiz, answered: number[]): void {
-  try {
-    const byQid: Record<string, number> = {};
-    quiz.questions.forEach((question, index) => {
-      if (index < answered.length) {
-        byQid[question.qid] = answered[index];
-      }
-    });
-    window.sessionStorage.setItem(`edubuddy.quiz.${quiz.id}`, JSON.stringify(byQid));
-  } catch {
-    // The quiz still works for this session without the mirror.
-  }
-}
-
-function clearMirror(quizId: string): void {
-  try {
-    window.sessionStorage.removeItem(`edubuddy.quiz.${quizId}`);
-  } catch {
-    // Nothing to clean up if storage is unavailable.
-  }
-}
-
-// The active material id is read from localStorage through a tiny store so
-// the start screen can render it during hydration (server snapshot: none)
-// and refresh the moment the paste flow stores a new id. The module keeps
-// the listener list because src/lib/active-material.ts has none of its own.
-let activeIdListeners: (() => void)[] = [];
-
-function subscribeActiveId(listener: () => void): () => void {
-  activeIdListeners.push(listener);
-  return () => {
-    activeIdListeners = activeIdListeners.filter((entry) => entry !== listener);
-  };
-}
-
-function notifyActiveIdListeners(): void {
-  for (const listener of activeIdListeners) {
-    listener();
-  }
-}
-
-function getActiveIdSnapshot(): string | null {
-  return getActiveMaterialId();
-}
-
-function getActiveIdServerSnapshot(): null {
-  return null;
-}
-
-const errorBoxStyle = {
-  color: "#EF4444",
-  textAlign: "center",
-  margin: "0.75rem 0",
-  fontSize: "0.9rem",
-  fontWeight: 600,
-  background: "#FEE2E2",
-  padding: "0.75rem",
-  borderRadius: "10px",
-} as const;
-
 const weakBadgeStyle = {
   padding: "0.2rem 0.6rem",
   borderRadius: "9999px",
@@ -144,115 +81,66 @@ const weakBadgeStyle = {
 } as const;
 
 export function QuizArena() {
-  const storedMaterialId = useSyncExternalStore(
-    subscribeActiveId,
-    getActiveIdSnapshot,
-    getActiveIdServerSnapshot
-  );
-  const [pastedTitle, setPastedTitle] = useState<string | null>(null);
-  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
-  const [numQuestions, setNumQuestions] = useState(5);
-  const [loadingView, setLoadingView] = useState<LoadingView | null>(null);
+  const [selectedDeckId, setSelectedDeckId] = useState<string>(DECK_OPTIONS[0].id);
+  const [numQuestions, setNumQuestions] = useState(10);
+  const [dueByDeck, setDueByDeck] = useState<Record<string, number>>({});
   const [quiz, setQuiz] = useState<PublicQuiz | null>(null);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [results, setResults] = useState<AttemptResponse | null>(null);
+  const [activeBanks, setActiveBanks] = useState<QuizBank[]>([]);
+  const [pools, setPools] = useState<SchedulesByBank>({});
+  const [results, setResults] = useState<LocalResults | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
-  const [error, setError] = useState("");
-  const [textInput, setTextInput] = useState("");
-  const [bankMode, setBankMode] = useState(false);
-  const [bankSchedules, setBankSchedules] = useState<CardSchedule[]>([]);
 
-  const materialId = storedMaterialId;
-  const materialQuery = useApiQuery<MaterialResponse>(
-    materialId ? `/api/materials/${materialId}` : null
-  );
+  const selectedDeck = DECK_OPTIONS.find((option) => option.id === selectedDeckId) ?? DECK_OPTIONS[0];
+  const deckQuestionCount = selectedDeck.banks.reduce((total, bank) => total + bank.questions.length, 0);
+  const countChoices = deckQuestionCount > 10 ? MIXED_DECK_COUNTS : SINGLE_DECK_COUNTS;
 
-  // The title comes from the material fetch, or straight from the analyze
-  // response while the paste flow's own material is still fresh.
-  const materialTitle = pastedTitle ?? materialQuery.data?.material.title ?? null;
-
-  const weakTopics = useMemo(
-    () =>
-      results
-        ? [...results.topicResults].filter((topic) => topic.weak).sort((a, b) => a.mastery - b.mastery)
-        : [],
-    [results]
-  );
-  const weakestTopicId = weakTopics[0]?.topicId ?? null;
-
-  const handleStart = async () => {
-    if (!materialId && !textInput.trim()) {
-      setError("Please paste your study content below, or load notes from the Notes Generator page first.");
-      return;
-    }
-    setError("");
-    setLoadingView({
-      title: "Generating your quiz...",
-      caption: `Creating ${numQuestions} ${difficulty} questions`,
-    });
-    try {
-      // Without an active material the pasted text becomes one first, the
-      // same way the Notes Generator does it, and is kept as the active one.
-      let id = materialId;
-      if (!id) {
-        const analyzeBody: AnalyzeRequest = { title: "Pasted Text", text: textInput.trim() };
-        const analyzed = await apiFetch<AnalyzeResponse>("/api/analyze", {
-          method: "POST",
-          body: analyzeBody,
-        });
-        id = analyzed.material.id;
-        setActiveMaterialId(id);
-        notifyActiveIdListeners();
-        setPastedTitle(analyzed.material.title);
+  // Due counts come from localStorage (an external system), so the effect
+  // reads it asynchronously and publishes the snapshot from the callback.
+  // It refreshes whenever the start screen comes back into view (quiz and
+  // results both cleared).
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const counts: Record<string, number> = {};
+      for (const option of DECK_OPTIONS) {
+        counts[option.id] = option.banks.reduce((total, bank) => total + deckDueCount(bank), 0);
       }
-      const quizBody: QuizRequest = { materialId: id, difficulty, count: numQuestions };
-      const data = await apiFetch<QuizResponse>("/api/quiz", { method: "POST", body: quizBody });
-      setQuiz(data.quiz);
-      setCurrentQ(0);
-      setAnswers([]);
-      setSelectedOption(null);
-      setResults(null);
-      setShowExplanation(false);
-    } catch (err) {
-      setError(toMessage(err));
-    } finally {
-      setLoadingView(null);
+      setDueByDeck(counts);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [quiz, results]);
+
+  const handleSelectDeck = (deckId: string) => {
+    setSelectedDeckId(deckId);
+    const option = DECK_OPTIONS.find((entry) => entry.id === deckId);
+    const available = option ? option.banks.reduce((total, bank) => total + bank.questions.length, 0) : 10;
+    const choices = available > 10 ? MIXED_DECK_COUNTS : SINGLE_DECK_COUNTS;
+    if (!choices.includes(numQuestions)) {
+      setNumQuestions(choices.includes(10) ? 10 : choices[0]);
     }
   };
 
-  const handleStartHistoryBank = () => {
-    let saved: CardSchedule[] = [];
-    try {
-      const raw = window.localStorage.getItem("edubuddy.srs.teks-sejarah-t4");
-      saved = raw ? (JSON.parse(raw) as CardSchedule[]) : [];
-    } catch {
-      saved = [];
-    }
-    const schedules = TEKS_SEJARAH_T4_BANK.map((question) =>
-      saved.find((card) => card.cardId === question.qid) ?? newCardSchedule(question.qid)
-    );
-    const dueIds = new Set(schedules.filter((card) => new Date(card.dueAt).getTime() <= Date.now()).map((card) => card.cardId));
-    const dueQuestions = TEKS_SEJARAH_T4_BANK.filter((question) => dueIds.has(question.qid));
-    const questions = (dueQuestions.length > 0 ? dueQuestions : TEKS_SEJARAH_T4_BANK).slice(0, numQuestions);
-    const bankQuiz: PublicQuiz = {
-      id: "teks-sejarah-t4-bank",
-      materialId: "teks-sejarah-t4",
-      topicIds: ["warisan-negara-bangsa"],
+  const handleStart = () => {
+    const deck = DECK_OPTIONS.find((option) => option.id === selectedDeckId) ?? DECK_OPTIONS[0];
+    const loaded = loadSchedules(deck.banks);
+    const questions = buildSessionQuestions(deck.banks, loaded, numQuestions);
+    setActiveBanks(deck.banks);
+    setPools(loaded);
+    setQuiz({
+      id: `${deck.id}-${Date.now()}`,
+      materialId: deck.id,
+      topicIds: deck.banks.map((bank) => bank.topicId),
       difficulty: "medium",
       questions,
       createdAt: new Date().toISOString(),
-    };
-    setBankSchedules(schedules);
-    setBankMode(true);
-    setQuiz(bankQuiz);
+    });
     setCurrentQ(0);
     setAnswers([]);
     setSelectedOption(null);
     setResults(null);
     setShowExplanation(false);
-    setError("");
   };
 
   const handleSelectOption = (index: number) => {
@@ -264,98 +152,70 @@ export function QuizArena() {
     setShowExplanation(true);
   };
 
-  const handleNext = async () => {
+  const handleNext = () => {
     if (selectedOption === null || !quiz) return;
+
+    const question = quiz.questions[currentQ];
+    const correct = selectedOption === question.correctAnswerIndex;
+    const bank = bankForQid(question.qid);
+    if (bank) {
+      const updatedPool = (pools[bank.id] ?? []).map((entry) =>
+        entry.cardId === question.qid ? scheduleReview(entry, correct ? "good" : "again") : entry
+      );
+      setPools((previous) => ({ ...previous, [bank.id]: updatedPool }));
+      saveSchedules(bank.id, updatedPool);
+    }
 
     const newAnswers = [...answers, selectedOption];
 
-    if (bankMode) {
-      const card = bankSchedules.find((entry) => entry.cardId === quiz.questions[currentQ].qid);
-      if (card) {
-        const updated = bankSchedules.map((entry) =>
-          entry.cardId === card.cardId ? scheduleReview(card, selectedOption === quiz.questions[currentQ].correctAnswerIndex ? "good" : "again") : entry
-        );
-        setBankSchedules(updated);
-        try {
-          window.localStorage.setItem("edubuddy.srs.teks-sejarah-t4", JSON.stringify(updated));
-        } catch {
-          // The bank remains usable when browser storage is unavailable.
-        }
-      }
-      if (currentQ < quiz.questions.length - 1) {
-        setAnswers(newAnswers);
-        setCurrentQ(currentQ + 1);
-        setSelectedOption(null);
-        setShowExplanation(false);
-        return;
-      }
-      const correctCount = newAnswers.filter((answer, index) => answer === quiz.questions[index].correctAnswerIndex).length;
-      setAnswers(newAnswers);
-      setResults({
-        attempt: { id: `local-${Date.now()}`, profileId: "local", quizId: quiz.id, materialId: quiz.materialId, answers: quiz.questions.map((question, index) => ({ qid: question.qid, chosenIndex: newAnswers[index], correct: newAnswers[index] === question.correctAnswerIndex })), score: correctCount / quiz.questions.length, completedAt: new Date().toISOString() },
-        results: quiz.questions.map((question, index) => ({ qid: question.qid, topicId: question.topicId, stem: question.stem, options: question.options, chosenIndex: newAnswers[index], correct: newAnswers[index] === question.correctAnswerIndex, answerIndex: question.correctAnswerIndex, explanation: question.explanation })),
-        topicResults: [{ topicId: "warisan-negara-bangsa", name: "Warisan Negara Bangsa", correct: correctCount, total: quiz.questions.length, mastery: correctCount / quiz.questions.length, weak: correctCount / quiz.questions.length < 0.6 }],
-      });
-      return;
-    }
-
     if (currentQ < quiz.questions.length - 1) {
       setAnswers(newAnswers);
-      mirrorAnswers(quiz, newAnswers);
       setCurrentQ(currentQ + 1);
       setSelectedOption(null);
       setShowExplanation(false);
       return;
     }
 
-    // The last answer is only committed once grading accepted it, so a
-    // failed submit leaves Finish Quiz working as a clean retry.
-    setError("");
-    setLoadingView({ title: "Grading your answers...", caption: "One moment while we check your work" });
-    try {
-      const body: AttemptRequest = {
-        quizId: quiz.id,
-        answers: quiz.questions.map((question, index) => ({
-          qid: question.qid,
-          chosenIndex: newAnswers[index],
-        })),
-      };
-      const graded = await apiFetch<AttemptResponse>("/api/attempt", { method: "POST", body });
-      setAnswers(newAnswers);
-      clearMirror(quiz.id);
-      setResults(graded);
-    } catch (err) {
-      setError(toMessage(err));
-    } finally {
-      setLoadingView(null);
-    }
-  };
+    const correctCount = newAnswers.filter((answer, index) => answer === quiz.questions[index].correctAnswerIndex).length;
+    const score = correctCount / quiz.questions.length;
 
-  const handlePractiseWeak = async () => {
-    if (!results || weakTopics.length === 0) return;
-    setError("");
-    setLoadingView({
-      title: "Generating your quiz...",
-      caption: "Focusing on your weak topics",
+    // One topic card per chapter that actually contributed questions, with
+    // this session's correct/total on it (deck practice is browser-only, so
+    // there is no cumulative progress to read).
+    const topicCards: TopicCard[] = activeBanks
+      .map((bank) => {
+        const indexes = quiz.questions
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ entry }) => bankForQid(entry.qid)?.id === bank.id)
+          .map(({ index }) => index);
+        const bankCorrect = indexes.filter((index) => newAnswers[index] === quiz.questions[index].correctAnswerIndex).length;
+        const total = indexes.length;
+        return {
+          topicName: bank.topicName,
+          correct: bankCorrect,
+          total,
+          weak: total >= 3 && bankCorrect / total < 0.6,
+        };
+      })
+      .filter((card) => card.total > 0);
+
+    const allSchedules: CardSchedule[] = Object.values(pools).flat();
+
+    setAnswers(newAnswers);
+    setResults({
+      score,
+      results: quiz.questions.map((entry, index) => ({
+        qid: entry.qid,
+        stem: entry.stem,
+        options: entry.options,
+        chosenIndex: newAnswers[index],
+        correct: newAnswers[index] === entry.correctAnswerIndex,
+        correctAnswerIndex: entry.correctAnswerIndex,
+        explanation: entry.explanation,
+      })),
+      topicCards,
+      nextDue: nextDueLabel(allSchedules),
     });
-    try {
-      const body: QuizRequest = {
-        materialId: results.attempt.materialId,
-        topicIds: weakTopics.map((topic) => topic.topicId),
-        focusWeak: true,
-      };
-      const data = await apiFetch<QuizResponse>("/api/quiz", { method: "POST", body });
-      setQuiz(data.quiz);
-      setCurrentQ(0);
-      setAnswers([]);
-      setSelectedOption(null);
-      setResults(null);
-      setShowExplanation(false);
-    } catch (err) {
-      setError(toMessage(err));
-    } finally {
-      setLoadingView(null);
-    }
   };
 
   const resetQuiz = () => {
@@ -365,90 +225,67 @@ export function QuizArena() {
     setSelectedOption(null);
     setResults(null);
     setShowExplanation(false);
-    setError("");
-    setBankMode(false);
   };
 
-  const showMaterialError = Boolean(materialId && materialQuery.error);
-  const materialError = materialQuery.error ? displayError(materialQuery.error) : "";
-
   // Start Screen
-  if (!quiz && !loadingView && !results) {
+  if (!quiz && !results) {
     return (
       <motion.div className="page-container" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <div className="page-header" style={{ textAlign: "center", marginBottom: "2.5rem" }}>
           <h1>Quiz Arena</h1>
-          <p>Test your knowledge with AI-generated quizzes. Choose your difficulty!</p>
+          <p>Pick a chapter deck and practise with spaced repetition, Anki-style.</p>
         </div>
 
         <div style={{ maxWidth: "550px", margin: "0 auto" }}>
-          {!materialId && (
-            <motion.div className="card" style={{ marginBottom: "1.25rem", padding: "1.5rem" }} initial={{ y: 16 }} animate={{ y: 0 }}>
-              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.6rem", color: "#111827" }}>Paste your study content</h3>
-              <textarea
-                className="input-glass"
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Paste your study material here to generate a quiz..."
-                style={{ minHeight: "110px" }}
-              />
-              <p style={{ fontSize: "0.8rem", color: "#9CA3AF", marginTop: "0.6rem" }}>
-                Tip: Generate notes first from the Notes Generator page; they are automatically used here.
-              </p>
-            </motion.div>
-          )}
-
-          {materialId && showMaterialError && (
-            <motion.div className="card" style={{ marginBottom: "1.5rem", padding: "1.5rem", textAlign: "center" }} initial={{ y: 16 }} animate={{ y: 0 }}>
-              <div style={{ color: "#EF4444", fontSize: "0.9rem", fontWeight: 600, marginBottom: "0.75rem" }}>
-                ⚠️ {materialError}
-              </div>
-              <button type="button" className="btn btn-secondary" onClick={materialQuery.reload}>
-                <HiOutlineArrowPath /> Try again
-              </button>
-            </motion.div>
-          )}
-
-          {materialId && !showMaterialError && (
-            <motion.div
-              className="card"
-              style={{ marginBottom: "1.5rem", padding: "0.85rem 1.25rem", border: "1px solid rgba(34,197,94,0.3)", background: "#DCFCE7" }}
-              initial={{ y: 16 }}
-              animate={{ y: 0 }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", color: "#16A34A", fontSize: "0.85rem", fontWeight: 700 }}>
-                ✅ {materialTitle ? `Study content loaded: ${materialTitle}` : "Study content loaded"}
-              </div>
-            </motion.div>
-          )}
-
-          <motion.div className="card" style={{ padding: "2rem" }} initial={{ y: 16 }} animate={{ y: 0 }} transition={{ delay: 0.1 }}>
-            <div style={{ marginBottom: "1.75rem" }}>
-              <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.85rem", textAlign: "center", color: "#111827" }}>Select Difficulty</h3>
-              <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
-                {DIFFICULTIES.map((d) => (
+          <motion.div className="card" style={{ padding: "2rem" }} initial={{ y: 16 }} animate={{ y: 0 }}>
+            <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.85rem", color: "#111827" }}>Select a topic deck</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.75rem" }}>
+              {DECK_OPTIONS.map((deck) => {
+                const selected = deck.id === selectedDeckId;
+                const total = deck.banks.reduce((sum, bank) => sum + bank.questions.length, 0);
+                const due = dueByDeck[deck.id] ?? total;
+                const isMix = deck.banks.length > 1;
+                return (
                   <button
-                    key={d}
+                    key={deck.id}
                     type="button"
+                    onClick={() => handleSelectDeck(deck.id)}
                     style={{
-                      flex: 1,
-                      padding: "0.65rem 1rem",
-                      borderRadius: "12px",
-                      fontSize: "0.9rem",
-                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.85rem",
+                      padding: "1rem 1.1rem",
+                      borderRadius: "14px",
                       cursor: "pointer",
-                      border: difficulty === d ? `2px solid ${DIFFICULTY_CONFIG[d].color}` : "2px solid #E5E7EB",
-                      background: difficulty === d ? DIFFICULTY_CONFIG[d].bg : "#FFFFFF",
-                      color: difficulty === d ? DIFFICULTY_CONFIG[d].color : "#6B7280",
+                      textAlign: "left",
                       fontFamily: "inherit",
+                      border: selected ? "2px solid #22C55E" : "2px solid #E5E7EB",
+                      background: selected ? "#F0FDF4" : "#FFFFFF",
                       transition: "0.2s ease",
                     }}
-                    onClick={() => setDifficulty(d)}
                   >
-                    {DIFFICULTY_CONFIG[d].label}
+                    <span style={{ fontSize: "1.35rem", color: isMix ? "#8B5CF6" : selected ? "#16A34A" : "#9CA3AF", flexShrink: 0 }}>
+                      <HiOutlineBookOpen />
+                    </span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ display: "block", fontSize: "0.7rem", fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "#9CA3AF" }}>
+                        {deck.subject}
+                      </span>
+                      <span style={{ display: "block", fontWeight: 700, fontSize: "0.95rem", color: "#111827", margin: "0.15rem 0" }}>
+                        {deck.title}
+                      </span>
+                      <span style={{ display: "block", fontSize: "0.8rem", color: "#6B7280" }}>
+                        {total} questions · {due} due for review
+                      </span>
+                    </span>
+                    {selected && (
+                      <span style={{ fontSize: "1.25rem", color: "#16A34A", flexShrink: 0 }}>
+                        <HiOutlineCheckCircle />
+                      </span>
+                    )}
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
 
             <div style={{ marginBottom: "1.75rem", textAlign: "center" }}>
@@ -465,15 +302,13 @@ export function QuizArena() {
                   fontWeight: 600, cursor: "pointer",
                 }}
               >
-                {QUESTION_COUNTS.map((n) => <option key={n} value={n}>{n}</option>)}
+                {countChoices.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
               </select>
             </div>
-
-            {error && (
-              <div style={errorBoxStyle}>
-                ⚠️ {displayError(error)}
-              </div>
-            )}
 
             <div style={{ textAlign: "center" }}>
               <button
@@ -481,20 +316,11 @@ export function QuizArena() {
                 className="btn btn-primary"
                 style={{ padding: "0.85rem 2.5rem", fontSize: "1rem", borderRadius: "9999px", width: "100%" }}
                 onClick={handleStart}
-                disabled={!materialId && !textInput.trim()}
               >
                 <HiOutlineLightBulb /> Start Quiz
               </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleStartHistoryBank}
-                style={{ width: "100%", marginTop: "0.75rem", borderRadius: "9999px" }}
-              >
-                <HiOutlineBookOpen /> Practise {TEKS_SEJARAH_T4_TITLE}
-              </button>
               <p style={{ fontSize: "0.78rem", color: "#9CA3AF", marginTop: "0.6rem" }}>
-                Reviews are scheduled automatically using spaced repetition.
+                Questions and answers are shuffled every round. Reviews are scheduled with spaced repetition.
               </p>
             </div>
           </motion.div>
@@ -503,24 +329,9 @@ export function QuizArena() {
     );
   }
 
-  // Loading
-  if (loadingView) {
-    return (
-      <div className="page-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <motion.div className="card" style={{ textAlign: "center", padding: "3.5rem 2.5rem" }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-          <div className="loading-spinner" style={{ margin: "0 auto 1.5rem auto" }} />
-          <h3 style={{ fontSize: "1.15rem", marginBottom: "0.35rem", color: "#111827" }}>{loadingView.title}</h3>
-          <p style={{ color: "#6B7280" }}>{loadingView.caption}</p>
-        </motion.div>
-      </div>
-    );
-  }
-
   // Results
   if (results) {
-    const pct = masteryPercent(results.attempt.score);
-    const correctCount = results.results.filter((r) => r.correct).length;
-    const totalCount = results.results.length;
+    const pct = masteryPercent(results.score);
 
     return (
       <motion.div className="page-container" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -533,19 +344,25 @@ export function QuizArena() {
               transition={{ type: "spring", stiffness: 100, damping: 15 }}
             >
               <div className="score-value">{pct}%</div>
-              <div className="score-label">{correctCount}/{totalCount}</div>
+              <div className="score-label">{results.results.filter((r) => r.correct).length}/{results.results.length}</div>
             </motion.div>
 
             <h2 style={{ fontSize: "1.35rem", fontWeight: 800, marginBottom: "0.5rem", color: "#111827" }}>
               {verdictText(pct)}
             </h2>
             <p style={{ color: "#6B7280", fontSize: "0.95rem" }}>
-              You answered {correctCount} of {totalCount} questions correctly.
+              You answered {results.results.filter((r) => r.correct).length} of {results.results.length} questions correctly.
+            </p>
+            <p style={{ color: "#9CA3AF", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+              Next review: {results.nextDue}
             </p>
 
-            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1.5rem" }}>
-              <button type="button" className="btn btn-primary" onClick={resetQuiz} style={{ borderRadius: "9999px" }}>
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1.5rem", flexWrap: "wrap" }}>
+              <button type="button" className="btn btn-secondary" onClick={resetQuiz} style={{ borderRadius: "9999px" }}>
                 <HiOutlineArrowPath /> Try Again
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleStart} style={{ borderRadius: "9999px" }}>
+                <HiOutlineArrowPath /> Practise bank again
               </button>
             </div>
           </div>
@@ -566,7 +383,7 @@ export function QuizArena() {
                       </div>
                     )}
                     <div style={{ padding: "0.6rem 0.85rem", background: "#DCFCE7", border: "1px solid rgba(34,197,94,0.2)", borderRadius: "8px", marginBottom: "0.75rem", color: "#6B7280", fontSize: "0.85rem" }}>
-                      <strong style={{ color: "#16A34A" }}>Correct:</strong> {r.options[r.answerIndex] ?? ""}
+                      <strong style={{ color: "#16A34A" }}>Correct:</strong> {r.options[r.correctAnswerIndex] ?? ""}
                     </div>
                     {r.explanation ? (
                       <div style={{ fontSize: "0.85rem", color: "#6B7280", lineHeight: 1.6 }}>
@@ -581,95 +398,44 @@ export function QuizArena() {
 
           <h3 style={{ fontSize: "1.1rem", fontWeight: 800, margin: "1.75rem 0 1rem 0", color: "#6B7280" }}>Topics</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-            {results.topicResults.map((topic, i) => (
-              <motion.div key={topic.topicId} className="card" style={{ padding: "1.25rem" }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.75rem" }}>
-                  <p style={{ flex: 1, fontWeight: 700, fontSize: "0.95rem", color: "#111827" }}>{topic.name}</p>
-                  <span style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600 }}>
-                    {topic.correct}/{topic.total}
-                  </span>
-                  {topic.weak && <span style={weakBadgeStyle}>Weak</span>}
-                </div>
-                <div
-                  role="progressbar"
-                  aria-valuenow={masteryPercent(topic.mastery)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`${topic.name} mastery`}
-                  style={{ height: "8px", background: "#E5E7EB", borderRadius: "9999px", overflow: "hidden" }}
-                >
+            {results.topicCards.map((topic, i) => {
+              const topicPct = masteryPercent(topic.total > 0 ? topic.correct / topic.total : 0);
+              return (
+                <motion.div key={topic.topicName} className="card" style={{ padding: "1.25rem" }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.85rem", marginBottom: "0.75rem" }}>
+                    <p style={{ flex: 1, fontWeight: 700, fontSize: "0.95rem", color: "#111827" }}>{topic.topicName}</p>
+                    <span style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600 }}>
+                      {topic.correct}/{topic.total}
+                    </span>
+                    {topic.weak && <span style={weakBadgeStyle}>Weak</span>}
+                  </div>
                   <div
-                    style={{
-                      height: "100%",
-                      width: `${masteryPercent(topic.mastery)}%`,
-                      background: topic.weak ? "#F59E0B" : "#22C55E",
-                      borderRadius: "9999px",
-                    }}
-                  />
-                </div>
-              </motion.div>
-            ))}
+                    role="progressbar"
+                    aria-valuenow={topicPct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${topic.topicName} mastery`}
+                    style={{ height: "8px", background: "#E5E7EB", borderRadius: "9999px", overflow: "hidden" }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${topicPct}%`,
+                        background: topic.weak ? "#F59E0B" : "#22C55E",
+                        borderRadius: "9999px",
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
-
-          {error && (
-            <div style={{ ...errorBoxStyle, marginTop: "1.25rem" }}>
-              ⚠️ {displayError(error)}
-              <div style={{ marginTop: "0.75rem" }}>
-                <button type="button" className="btn btn-secondary" onClick={handlePractiseWeak} disabled={weakTopics.length === 0}>
-                  <HiOutlineArrowPath /> Try again
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center", marginTop: "1.5rem" }}>
-            {bankMode ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleStartHistoryBank}
-                style={{ borderRadius: "9999px" }}
-              >
-                <HiOutlineArrowPath /> Practise bank again
-              </button>
-            ) : (
-              <>
-            {weakestTopicId ? (
-              <Link
-                href={`/progress?material=${results.attempt.materialId}&topic=${weakestTopicId}`}
-                className="btn btn-primary"
-                style={{ borderRadius: "9999px" }}
-              >
-                <HiOutlineBookOpen /> Study weak topics
-              </Link>
-            ) : (
-              <button type="button" className="btn btn-primary" disabled style={{ borderRadius: "9999px" }}>
-                <HiOutlineBookOpen /> Study weak topics
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handlePractiseWeak}
-              disabled={weakTopics.length === 0}
-              style={{ borderRadius: "9999px" }}
-              >
-                <HiOutlineArrowPath /> Practise weak topics
-              </button>
-              </>
-            )}
-          </div>
-          {weakTopics.length === 0 && (
-            <p style={{ textAlign: "center", fontSize: "0.85rem", color: "#9CA3AF", marginTop: "0.6rem" }}>
-              No weak topics this time.
-            </p>
-          )}
         </div>
       </motion.div>
     );
   }
 
-  // Quiz in progress. The empty guard keeps the view total if a quiz ever
+  // Quiz in progress. The empty guard keeps the view total if a deck ever
   // arrives without questions.
   if (!quiz || quiz.questions.length === 0) {
     return (
@@ -691,17 +457,6 @@ export function QuizArena() {
   return (
     <div className="page-container">
       <div style={{ maxWidth: "750px", margin: "0 auto" }}>
-        {error && (
-          <div className="card" style={{ padding: "1.25rem", marginBottom: "1.25rem", textAlign: "center" }}>
-            <div style={errorBoxStyle}>
-              ⚠️ {displayError(error)}
-            </div>
-            <button type="button" className="btn btn-secondary" onClick={() => setError("")} style={{ borderRadius: "9999px" }}>
-              <HiOutlineArrowPath /> Try again
-            </button>
-          </div>
-        )}
-
         {/* Progress Bar */}
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.75rem" }}>
           <div style={{ flex: 1, height: "8px", background: "#E5E7EB", borderRadius: "9999px", overflow: "hidden" }}>

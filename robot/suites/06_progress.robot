@@ -4,8 +4,9 @@ Documentation     The Progress screen with real activity behind it: the four
 ...               Quizzes list, the Focus Areas weak-topic cards with their
 ...               expandable explanations, and the ?material=&topic= deep
 ...               link that opens exactly one card. The suite builds its own
-...               activity first (sample notes plus two 10 question quizzes
-...               choosing option 1), because every suite opens a fresh
+...               activity first (sample notes plus two seeded 30 percent
+...               attempts through the API, since the Quiz Arena is now the
+...               browser-only deck quiz), because every suite opens a fresh
 ...               browser context and therefore a fresh profile.
 Resource          ../resources/app.resource
 Suite Setup       Open App
@@ -20,12 +21,8 @@ Progress Shows Stats, Chart Heading And Recent Quizzes
     ...    entries, one per attempt, each showing 3 of 10 correct.
     ${material_url} =    Open Sample Notes From Dashboard
     Set Suite Variable    ${MATERIAL_URL}    ${material_url}
-    Start Quiz With Question Count    10
-    Answer Quiz Choosing First Option    10
-    Wait For Quiz Results
-    Start Quiz With Question Count    10
-    Answer Quiz Choosing First Option    10
-    Wait For Quiz Results
+    Seed Graded Quiz Attempt
+    Seed Graded Quiz Attempt
 
     Go To    ${BASE_URL}/progress
     Wait For Elements State    text="Your Progress"    visible    timeout=15s
