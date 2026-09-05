@@ -96,7 +96,11 @@ production keeps that default of 60.
   by the scanned-PDF suite.
 - `robot/suites/__init__.robot`: builds and starts the app once for every
   suite in this directory, and stops it again afterwards.
-- `robot/suites/01_dashboard_and_sample.robot` through
-  `07_phone_width.robot`: the test suites themselves, in the order they are
-  meant to be read.
+- `robot/suites/01_landing_and_dashboard.robot` through
+  `08_phone_width.robot`: the test suites themselves, in the order they are
+  meant to be read. Each suite opens its own browser context, so each one
+  starts from a fresh profile: the suites that need quiz history build it
+  themselves (the sample notes plus two 10 question quizzes choosing the
+  first option, which the mock scores at exactly 30 percent and which leaves
+  all five topics weak after the second run).
 - `robot/results/`: everything a run produces (not committed).

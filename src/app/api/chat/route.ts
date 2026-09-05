@@ -28,7 +28,8 @@ const chatRequestSchema = z.object({
 }) satisfies z.ZodType<ChatRequest>;
 
 // POST /api/chat: one AI tutor reply with follow-up suggestions, counting
-// one AI call. GET /api/chat: the profile's stored history.
+// one AI call. GET /api/chat: the profile's stored history. DELETE
+// /api/chat: clear that history.
 export const POST = withProfile(async ({ request, profile, store }) => {
   const body = await parseBody(request, chatRequestSchema);
 
@@ -83,5 +84,14 @@ export const POST = withProfile(async ({ request, profile, store }) => {
 export const GET = withProfile(async ({ profile }) => {
   const messages = await getChatStore().getMessages(profile.id);
   const response: ChatHistoryResponse = { messages };
+  return jsonOk(response);
+});
+
+// DELETE /api/chat: clears the profile's stored history and answers with
+// the now-empty list, so the caller can update its state straight from the
+// response.
+export const DELETE = withProfile(async ({ profile }) => {
+  await getChatStore().clear(profile.id);
+  const response: ChatHistoryResponse = { messages: [] };
   return jsonOk(response);
 });

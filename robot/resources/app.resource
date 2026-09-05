@@ -1,9 +1,10 @@
 *** Settings ***
 Documentation     Shared variables and keywords for the EduBuddy end-to-end
 ...               suite: building and starting the app in forced mock mode,
-...               stopping it cleanly, opening a browser against it, and a
-...               few small actions every suite repeats (answering a quiz,
-...               waiting for one of the app's own routes to appear).
+...               stopping it cleanly, opening a browser against it, and the
+...               small flow keywords several suites repeat (opening the
+...               sample notes, running a quiz always choosing the first
+...               option, waiting for a results view).
 Library           Process
 Library           Browser
 
@@ -15,6 +16,7 @@ ${PORT}           3105
 ${BASE_URL}       http://localhost:${PORT}
 ${BROWSER}        chromium
 ${HEADLESS}       True
+${SAMPLE_TITLE}    How the Internet Works: A First Tour
 
 *** Keywords ***
 Build App
@@ -45,11 +47,11 @@ Start App
     ...    FIREBASE_SERVICE_ACCOUNT_JSON to empty strings for this process
     ...    only (even if a .env.local with real secrets exists), and raising
     ...    the per-IP request cap through IP_REQUESTS_PER_MINUTE=1000 so the
-    ...    roughly 65 profiled requests a full run makes inside one minute
-    ...    cannot trip the rate limiter (the app's default is 60), then waits
-    ...    until GET ${BASE_URL}/api/status reports ai "mock" and store
-    ...    "memory". Stores the server process in ${SERVER_PROCESS} (a suite
-    ...    variable) so Stop App can find it again later.
+    ...    many profiled requests a full run makes inside one minute cannot
+    ...    trip the rate limiter (the app's default is 60), then waits until
+    ...    GET ${BASE_URL}/api/status reports ai "mock" and store "memory".
+    ...    Stores the server process in ${SERVER_PROCESS} (a suite variable)
+    ...    so Stop App can find it again later.
     Log    Starting npm start in ${APP_DIR} on port ${PORT} ...    console=True
     ${process} =    Start Process
     ...    npm.cmd    start    --    -p    ${PORT}
@@ -99,7 +101,7 @@ Port Must Be Free
 
 Open App
     [Documentation]    Opens a fresh browser, context and page, and navigates
-    ...    to the dashboard. Call once per suite file (as Suite Setup) so
+    ...    to the app's root. Call once per suite file (as Suite Setup) so
     ...    every test in that file shares one browser context, and therefore
     ...    one localStorage profile id. ``viewport`` is forwarded to
     ...    New Context as-is (see that keyword's own documentation, under the
@@ -118,50 +120,77 @@ Wait Until Url Contains
     ...
     ...    Used instead of the Browser library's own "Wait For Navigation"
     ...    for every route change in this suite, including the ones
-    ...    triggered by a plain link click. A first version of this suite
-    ...    used "Wait For Navigation" and saw it time out waiting for a
-    ...    navigation that, per its own debug log, had already happened: it
-    ...    is an event-based wait, and Next.js client-side route changes can
-    ...    complete before such a listener attaches, since they update the
-    ...    URL through the History API rather than loading a new document.
-    ...    Polling the current URL has no such race, since a check that
-    ...    runs after the fact simply passes immediately.
+    ...    triggered by a plain link click or by router.push. A first
+    ...    version of this suite used "Wait For Navigation" and saw it time
+    ...    out waiting for a navigation that, per its own debug log, had
+    ...    already happened: it is an event-based wait, and Next.js
+    ...    client-side route changes can complete before such a listener
+    ...    attaches, since they update the URL through the History API
+    ...    rather than loading a new document. Polling the current URL has
+    ...    no such race, since a check that runs after the fact simply
+    ...    passes immediately.
     [Arguments]    ${fragment}    ${timeout}=20s
     Wait Until Keyword Succeeds    ${timeout}    0.5s    Get Url    contains    ${fragment}
 
 Open Sample Notes From Dashboard
     [Documentation]    From the dashboard, clicks "Try sample notes" and
-    ...    waits for the resulting topics page. Returns that page's URL so
-    ...    callers can navigate straight back to it later without depending
-    ...    on nav-link text that may be ambiguous on other pages.
-    Go To    ${BASE_URL}
+    ...    waits for the Notes Generator to open that material's result view
+    ...    at /notes?material=<id>, the one generate flow that changes the
+    ...    URL (it calls router.push). Returns that page's URL so callers
+    ...    can navigate straight back to it later. The keyword only returns
+    ...    once the sample title is visible, which means POST /api/notes has
+    ...    answered and the result view's Notes tab is really rendered (the
+    ...    first generation can show a brief loading card before that).
+    Go To    ${BASE_URL}/dashboard
+    Wait For Elements State    "Try sample notes"    visible    timeout=15s
     Click    "Try sample notes"
-    Wait Until Url Contains    /notes/
+    Wait Until Url Contains    /notes?material=
+    Wait For Elements State    text=${SAMPLE_TITLE}    visible    timeout=30s
     ${url} =    Get Url
     RETURN    ${url}
 
-Start Quiz From Topics Page
-    [Documentation]    Clicks "Start quiz" on the topics page currently open
-    ...    (all topics selected by default) and waits for the quiz page.
-    Click    "Start quiz"
-    Wait Until Url Contains    /quiz?quiz=
+Start Quiz With Question Count
+    [Documentation]    Starts a quiz at /quiz for the context's active
+    ...    material: waits for the green "Study content loaded" pill (which
+    ...    proves the active material id was found and its material fetched),
+    ...    picks ``count`` in the question-count select, clicks Start Quiz,
+    ...    and waits out the "Generating your quiz..." loading card until the
+    ...    first question's options and "Check Answer" button are ready.
+    [Arguments]    ${count}
+    Go To    ${BASE_URL}/quiz
+    Wait For Elements State    text=Study content loaded    visible    timeout=20s
+    Select Options By    css=select    value    ${count}
+    Click    "Start Quiz"
+    Wait For Elements State    "Check Answer"    visible    timeout=20s
 
-Answer Every Question Choosing Option
-    [Documentation]    On the quiz page currently open, clicks the given
-    ...    1-based option number on every question, advancing with Next,
-    ...    and stops as soon as Submit is visible, i.e. after the last
-    ...    question has been answered but before Submit is clicked.
-    [Arguments]    ${option_number}=1
-    ${index} =    Evaluate    int($option_number) - 1
-    WHILE    True    limit=50
-        Click    role=button >> nth=${index}
-        ${submit_count} =    Get Element Count    "Submit"
-        IF    ${submit_count} > 0    BREAK
-        Click    "Next"
+Answer Quiz Choosing First Option
+    [Documentation]    Answers every question of the quiz currently in
+    ...    progress by always choosing the first option: select it, click
+    ...    "Check Answer", then advance with "Next" on every question but
+    ...    the last, finishing with "Finish Quiz". Between questions the
+    ...    keyword waits for the next question's counter text (for example
+    ...    "2/10"), because the answer card animates out and in and clicking
+    ...    the first option too early could hit the outgoing card.
+    ...
+    ...    With the mock AI this exact procedure scores 30 percent on a 10
+    ...    question quiz over the sample notes (the correct option sits at
+    ...    position 1 on questions 1, 5 and 9 only), which is what the quiz
+    ...    suites assert.
+    [Arguments]    ${questions}=10
+    FOR    ${i}    IN RANGE    ${questions}
+        Click    css=.quiz-option >> nth=0
+        Click    "Check Answer"
+        IF    ${i} < ${questions} - 1
+            Click    "Next"
+            Wait For Elements State    text=${i + 2}/${questions}    visible    timeout=10s
+        END
     END
+    Click    "Finish Quiz"
 
-Submit Quiz
-    [Documentation]    Clicks Submit on a fully answered quiz page and waits
-    ...    for the results page.
-    Click    "Submit"
-    Wait Until Url Contains    /results?attempt=
+Wait For Quiz Results
+    [Documentation]    Waits for the results view to replace the question
+    ...    flow after "Finish Quiz". There is no route change any more (the
+    ...    whole quiz lives at /quiz), so the score circle element is what
+    ...    this waits for; a brief "Grading your answers..." loading card
+    ...    sits between the click and the results.
+    Wait For Elements State    css=.score-value    visible    timeout=20s

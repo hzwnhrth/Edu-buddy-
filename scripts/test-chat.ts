@@ -8,7 +8,7 @@ process.env.DAILY_AI_CALL_CAP = "2";
 
 import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
-import { GET as chatGetRoute, POST as chatPostRoute } from "@/app/api/chat/route";
+import { GET as chatGetRoute, DELETE as chatDeleteRoute, POST as chatPostRoute } from "@/app/api/chat/route";
 import type { ApiErrorResponse, ChatHistoryResponse, ChatRequest, ChatResponse } from "@/lib/api-types";
 import { splitIntoChunks } from "@/lib/ai/text";
 import { getStore } from "@/lib/store";
@@ -180,6 +180,26 @@ async function main(): Promise<void> {
     const fresh = await callChatHistory(randomUUID());
     assert(fresh.status === 200, `expected 200, got ${fresh.status}`);
     assert(fresh.data.messages.length === 0, "expected a fresh profile to have no stored messages");
+  });
+
+  await testCase("(f) DELETE clears the history and later GETs return empty", async () => {
+    // profile1 still holds the 4 messages from cases (a) and (b).
+    const deleteResponse = await chatDeleteRoute(
+      buildRequest("/api/chat", profile1, { method: "DELETE" })
+    );
+    assert(deleteResponse.status === 200, `expected 200, got ${deleteResponse.status}`);
+    const deleted = (await deleteResponse.json()) as ChatHistoryResponse & ApiErrorResponse;
+    assert(Array.isArray(deleted.messages) && deleted.messages.length === 0, "expected the DELETE response to carry an empty messages array");
+
+    const after = await callChatHistory(profile1);
+    assert(after.status === 200, `expected 200, got ${after.status}`);
+    assert(after.data.messages.length === 0, "expected the stored history to be empty after DELETE");
+
+    // Clearing again, on a profile with nothing stored, is still a calm 200.
+    const again = await chatDeleteRoute(
+      buildRequest("/api/chat", randomUUID(), { method: "DELETE" })
+    );
+    assert(again.status === 200, `expected 200 for a second DELETE, got ${again.status}`);
   });
 
   if (anyFailed) {

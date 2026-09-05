@@ -133,6 +133,8 @@ export interface MeResponse {
   profileId: string;
   materials: Material[];
   progress: TopicProgress[];
+  // The profile's quiz history, newest first, capped at the 20 most recent.
+  attempts: AttemptSummary[];
   latestFeedback: string | null;
   latestFeedbackAt: string | null;
   stats: MeStats;

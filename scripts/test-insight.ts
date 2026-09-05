@@ -124,13 +124,16 @@ function buildQuestion(qid: string, topic: Topic): Question {
 }
 
 // One quiz and one attempt for profileId on material, with a mix of right
-// and wrong answers so score is neither 0 nor 1. Returns the attempt's score.
+// and wrong answers so score is neither 0 nor 1. completedAt can be pinned
+// so two seeded attempts have a deterministic newest-first order. Returns
+// the score plus the attempt id and stamp for later assertions.
 async function seedQuizAndAttempt(
   store: Store,
   profileId: string,
   material: Material,
-  topics: Topic[]
-): Promise<number> {
+  topics: Topic[],
+  completedAt: string = new Date().toISOString()
+): Promise<{ score: number; attemptId: string; completedAt: string }> {
   const questions = topics.map((topic, index) => buildQuestion(`q${index}`, topic));
   const quiz = await store.createQuiz({
     profileId,
@@ -149,16 +152,16 @@ async function seedQuizAndAttempt(
   }));
   const score = answers.filter((answer) => answer.correct).length / answers.length;
 
-  await store.createAttempt({
+  const attempt = await store.createAttempt({
     profileId,
     quizId: quiz.id,
     materialId: material.id,
     answers,
     score,
-    completedAt: new Date().toISOString(),
+    completedAt,
   });
 
-  return score;
+  return { score, attemptId: attempt.id, completedAt };
 }
 
 // Writes a TopicProgress record directly (bypassing /api/attempt, which is
@@ -210,7 +213,7 @@ async function main(): Promise<void> {
   const profile2 = randomUUID();
   await store.getOrCreateProfile(profile2);
   const material2 = await seedMaterial(store, profile2, "profile2");
-  const seededScore = await seedQuizAndAttempt(store, profile2, material2, topics.slice(0, 3));
+  const seededFirst = await seedQuizAndAttempt(store, profile2, material2, topics.slice(0, 3));
   const strongWeak = await seedProgress(store, profile2, material2.id, topics[0], 5, 4, 1);
   const weakWeak = await seedProgress(store, profile2, material2.id, topics[1], 4, 1, 3);
   const seededWeakCount = [strongWeak, weakWeak].filter(Boolean).length;
@@ -294,12 +297,39 @@ async function main(): Promise<void> {
     assert(data.progress.length === 2, `expected 2 progress records, got ${data.progress.length}`);
     assert(data.stats.materials === 1, `expected stats.materials 1, got ${data.stats.materials}`);
     assert(data.stats.quizzesTaken === 1, `expected stats.quizzesTaken 1, got ${data.stats.quizzesTaken}`);
-    assert(data.stats.averageScore === seededScore, `expected averageScore ${seededScore}, got ${data.stats.averageScore}`);
+    assert(data.stats.averageScore === seededFirst.score, `expected averageScore ${seededFirst.score}, got ${data.stats.averageScore}`);
     assert(
       data.stats.weakTopics === seededWeakCount,
       `expected weakTopics ${seededWeakCount}, got ${data.stats.weakTopics}`
     );
     assert(data.latestFeedback === feedbackFromF, "expected latestFeedback to equal case (f)'s result");
+  });
+
+  await testCase("(h2) /api/me lists attempts newest first after two quizzes", async () => {
+    // A second quiz and attempt for profile2, on the same sample material,
+    // completed strictly after the setup attempt so the order is
+    // deterministic (mirrors the quiz seeding pattern of test-quiz.ts).
+    const second = await seedQuizAndAttempt(
+      store,
+      profile2,
+      material2,
+      topics.slice(2, 5),
+      new Date(Date.parse(seededFirst.completedAt) + 60_000).toISOString()
+    );
+
+    const { status, data } = await callMe(profile2);
+    assert(status === 200, `expected 200, got ${status}`);
+    assert(data.attempts.length === 2, `expected 2 attempts, got ${data.attempts.length}`);
+    assert(data.attempts[0].id === second.attemptId, "expected the newest attempt first");
+    assert(data.attempts[1].id === seededFirst.attemptId, "expected the older attempt second");
+    assert(data.attempts[0].questionCount === 3, `expected questionCount 3, got ${data.attempts[0].questionCount}`);
+    assert(
+      JSON.stringify(data.attempts[0].topicIds) ===
+        JSON.stringify(topics.slice(2, 5).map((topic) => topic.id)),
+      "expected the newest attempt's topic ids to come from its quiz"
+    );
+    // The stat still counts every attempt; only the listed summaries cap at 20.
+    assert(data.stats.quizzesTaken === 2, `expected quizzesTaken 2, got ${data.stats.quizzesTaken}`);
   });
 
   await testCase("(i) GET /api/me for a brand-new profile", async () => {

@@ -800,6 +800,18 @@ textarea.input-glass::placeholder {
   50% { transform: scale(1.1) rotate(2deg); }
 }
 
+.streak-info h3 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--accent-orange);
+}
+
+.streak-info p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 /* ===========================
    Score Circle (Quiz Results)
    =========================== */

@@ -77,12 +77,11 @@ export interface Question {
 // The client-safe view of a Question. Since the UI port, quiz responses also
 // carry the answer key (the answer index renamed to correctAnswerIndex, plus
 // the explanation) so the Quiz screen can reveal it client-side; grading in
-// /api/attempt stays server-side and authoritative. The fields are optional
-// in this type only so development fixtures without an answer key stay valid;
-// the API always sends them.
+// /api/attempt stays server-side and authoritative.
+// Both fields are required: every producer must set them.
 export type PublicQuestion = Omit<Question, "answerIndex" | "explanation"> & {
-  correctAnswerIndex?: 0 | 1 | 2 | 3;
-  explanation?: string;
+  correctAnswerIndex: 0 | 1 | 2 | 3;
+  explanation: string;
 };
 
 // A generated quiz covering one or more topics of a material.

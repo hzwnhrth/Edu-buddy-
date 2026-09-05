@@ -17,10 +17,12 @@ import type { ChatMessage } from "@/lib/types";
 const MAX_CHAT_MESSAGES = 50;
 
 // The persistence contract for chat history. Messages are stored oldest
-// first and returned oldest first.
+// first and returned oldest first; clear drops the profile's whole stored
+// history.
 export interface ChatHistoryStore {
   appendMessages(profileId: string, messages: ChatMessage[]): Promise<void>;
   getMessages(profileId: string): Promise<ChatMessage[]>;
+  clear(profileId: string): Promise<void>;
 }
 
 // ---- in-memory implementation --------------------------------------------
@@ -55,6 +57,10 @@ export class MemoryChatHistoryStore implements ChatHistoryStore {
   async getMessages(profileId: string): Promise<ChatMessage[]> {
     const existing = this.tables.messagesByProfile.get(profileId) ?? [];
     return existing.slice(-MAX_CHAT_MESSAGES).map((message) => ({ ...message }));
+  }
+
+  async clear(profileId: string): Promise<void> {
+    this.tables.messagesByProfile.delete(profileId);
   }
 }
 
@@ -140,6 +146,13 @@ export class RtdbChatHistoryStore implements ChatHistoryStore {
     // chronologically, so the result is oldest first either way.
     entries.sort((a, b) => a.key.localeCompare(b.key));
     return entries.map((entry) => entry.message);
+  }
+
+  async clear(profileId: string): Promise<void> {
+    // Reference.remove(), per node_modules/@firebase/database-types:
+    // removes this location's whole subtree, which is exactly the stored
+    // history for this profile and nothing else.
+    await getRtdb().ref(chatPath(profileId)).remove();
   }
 }
 
