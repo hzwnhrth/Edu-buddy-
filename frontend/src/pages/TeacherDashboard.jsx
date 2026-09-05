@@ -15,7 +15,7 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100, damping: 15 } }
 };
 
-// Mock data for the Classroom View — 10 students with names, gender and
+// Mock data for the Classroom View - 10 students with names, gender and
 // mastery percentage. Same shape a real class roster API would return.
 const classroomData = [
   { id: 1, name: 'Aiman', gender: 'boy', mastery: 92, status: 'green' },
@@ -110,7 +110,7 @@ export default function TeacherDashboard() {
         <div className="stat-card">
           <div className="stat-icon green"><HiOutlineAcademicCap /></div>
           <div className="stat-info">
-            <h3>{stats ? (stats.classAvgScore ?? '—') : 68}{stats && stats.classAvgScore !== null ? '%' : ''}</h3>
+            <h3>{stats ? (stats.classAvgScore ?? '-') : 68}{stats && stats.classAvgScore !== null ? '%' : ''}</h3>
             <p>Class Avg Score</p>
           </div>
         </div>
@@ -148,7 +148,7 @@ export default function TeacherDashboard() {
                   textAlign: 'center',
                   cursor: 'pointer',
                 }}
-                title={`${student.name} — ${meta.label}, ${student.mastery}% mastery`}
+                title={`${student.name} - ${meta.label}, ${student.mastery}% mastery`}
               >
                 {/* Mastery ring avatar */}
                 <div style={{

@@ -62,13 +62,13 @@ export default function NotesStudio() {
   const handleApprove = () => {
     approveNote(result);
     resetDraft();
-    setNotice({ type: 'success', text: 'Approved — published to your students' });
+    setNotice({ type: 'success', text: 'Approved - published to your students' });
     setTimeout(() => setNotice(null), 3000);
   };
 
   const handleReject = () => {
     resetDraft();
-    setNotice({ type: 'error', text: 'Draft rejected — not visible to students' });
+    setNotice({ type: 'error', text: 'Draft rejected - not visible to students' });
     setTimeout(() => setNotice(null), 3000);
   };
 
@@ -83,7 +83,7 @@ export default function NotesStudio() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Lesson Studio — Generate & Approve Notes</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Lesson Studio - Generate & Approve Notes</h2>
           <p style={{ color: '#6B7280', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.25rem' }}>
             <HiOutlineShieldCheck style={{ color: '#16A34A' }} />
             AI drafts are hidden from students until you approve them.
@@ -132,7 +132,7 @@ export default function NotesStudio() {
               <HiOutlineDocumentArrowUp className="upload-zone-icon" />
             </motion.div>
             <h3>{isDragActive ? 'Drop PDF here' : 'Upload a lecture PDF to generate notes'}</h3>
-            <p style={{ color: '#6B7280', fontSize: '0.9rem' }}>You review the draft — students only see approved materials</p>
+            <p style={{ color: '#6B7280', fontSize: '0.9rem' }}>You review the draft - students only see approved materials</p>
             {file && (
               <div style={{ marginTop: '1.25rem', padding: '0.6rem 1rem', background: '#DCFCE7', borderRadius: '9999px', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: '#16A34A', fontWeight: 600, fontSize: '0.9rem' }}>
                 <HiOutlineDocumentText /> {file.name}

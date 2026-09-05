@@ -73,7 +73,7 @@ function loadState() {
 export function AppProvider({ children }) {
   const [state, setState] = useState(loadState);
 
-  // Persist to localStorage — guarded so a full quota can never crash the app
+  // Persist to localStorage - guarded so a full quota can never crash the app
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));

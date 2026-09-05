@@ -91,7 +91,7 @@ export default function Landing() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.4, type: 'spring', stiffness: 80 }}
           >
-            One website for smart note summaries, personalized quizzes, and an AI tutor that's always ready to help.
+            One website for smart note summaries, personalized quizzes, and an AI tutor that&apos;s always ready to help.
           </motion.p>
           
           <motion.div 

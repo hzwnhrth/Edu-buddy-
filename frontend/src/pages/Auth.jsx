@@ -30,7 +30,7 @@ function passwordStrength(pw) {
  * Auth Component
  * Combined Login / Signup screen. Follows the app's Neo-Minimalist theme:
  * centered card, dotted backdrop, green primary action. Mock authentication
- * backed by localStorage — same shape a real auth API will replace later.
+ * backed by localStorage - same shape a real auth API will replace later.
  */
 export default function Auth() {
   const location = useLocation();
@@ -214,7 +214,7 @@ export default function Auth() {
           </Link>
         </p>
 
-        {/* Guest escape hatch — demo-friendly */}
+        {/* Guest escape hatch - demo-friendly */}
         <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
           <Link to="/dashboard" style={{ fontSize: '0.82rem', color: '#9CA3AF', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
             <HiOutlineSparkles /> Continue as guest
