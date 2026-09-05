@@ -2,45 +2,70 @@
 
 ## What EduBuddy is
 
-EduBuddy is an AI study assistant for university students. A student uploads lecture notes, as a PDF or as pasted text, and gets back the topics found in those notes, a quiz built from them, plain-language explanations for any topic they are weak on, and a short study plan. There is no account and no login. It was built for Hackathon Sedia!, a student hackathon, for United Nations Sustainable Development Goal 4, Quality Education.
+EduBuddy is a study companion for students, built as a hackathon entry for Hackathon Sedia! for United Nations Sustainable Development Goal 4, Quality Education. A student uploads or pastes lecture notes and the app:
 
-## How it works
+- splits the notes into topics and writes study notes, flashcards and key points from them,
+- builds multiple-choice quizzes where the student picks the difficulty and the number of questions,
+- flags weak topics after a quiz and explains them in plain language,
+- answers questions in an AI tutor chat that reads from the student's notes,
+- tracks mastery per topic on a Progress screen with written feedback and a "Review today" queue,
+- schedules practice with a spaced-repetition scheduler (rate a card again, hard, good or easy and it comes back at the right time),
+- offers a built-in Malaysian history quiz bank, Form 4 Sejarah (Warisan Negara Bangsa), which runs without any AI at all,
+- and includes teacher and admin demo views for showing the product to educators.
 
-Six screens, each with one main action:
+There is no login and no account. On first visit the browser creates a random profile id and keeps it in localStorage; every note, quiz, result and progress entry belongs to that browser.
 
-1. Dashboard (`/`): recent notes, overall mastery, and a short queue of what to review today.
-2. Upload (`/upload`): drop a PDF or paste text; the app extracts the topics and moves on by itself.
-3. Topics (`/notes/[id]`): the extracted topics, a mastery bar on each, and one button to start a quiz.
-4. Quiz (`/notes/[id]/quiz`): one question at a time, four options, a progress bar, and a submit at the end.
-5. Results (`/notes/[id]/results`): the score, a bar per topic, and the weak topics flagged.
-6. Study (`/study/[materialId]/[topicId]`): a plain-language explanation of one topic, with its key points.
+The screens: Landing (`/`), Dashboard (`/dashboard`), Notes Generator (`/notes`), Quiz Arena (`/quiz`), AI Tutor (`/chat`), Progress (`/progress`), plus the demo views (`/teacher-dashboard` and `/admin-dashboard`).
 
-## What you need
+## Quick start
 
-- Node.js, with npm. Any current long-term-support (LTS) release of Node.js is enough.
-- Python 3, with the `py` launcher on the PATH. This is only needed to run the end-to-end test suite; the app itself does not need Python.
+You need Node.js with npm. Then, from this folder:
 
-## Setup
+```
+npm install
+npm run dev
+```
 
-1. Clone the repository.
-2. Install the dependencies: `npm install`.
-3. Start the development server: `npm run dev`.
-4. Open the local address the terminal prints, in a browser.
+Open the local address the terminal prints. That is the whole setup: with zero configuration the app already works in fallback mode. AI answers come from a deterministic mock built into the project (no network calls), and all data is kept in memory for the life of the server process. Whenever a fallback is active the header shows a "Mock AI" badge, a "Memory store" badge, or both, so mock output is never mistaken for the real thing. To see the full flow without typing anything, use "Try sample notes" on the dashboard.
 
-That is everything required to see the app work. By default it runs in mock mode, with no secrets configured: AI answers come from a deterministic mock built into the project instead of a real model, and all data is kept in memory for the life of that server process instead of a real database. Whenever a fallback like this is active, the header shows a "Mock AI" badge, a "Memory store" badge, or both, so it is always clear which parts are real. To see the whole flow without typing or uploading anything, use "Try sample notes" on the dashboard.
+## Real mode (optional)
 
-## Secrets
+Copy `.env.example` to `.env.local` and fill in what you have. The four variables:
 
-Copy `.env.example` to `.env.local` and fill in what you have.
+| Variable | Meaning |
+| --- | --- |
+| `OPENROUTER_API_KEY` | A key from https://openrouter.ai/keys. Empty means mock AI. |
+| `OPENROUTER_MODEL` | Optional. One specific model id, which replaces the default model chain entirely. Empty means the chain described below. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | The service account JSON of your Firebase project, pasted on one line. Empty, or the URL below missing, means in-memory storage that resets on every restart. |
+| `FIREBASE_DATABASE_URL` | The Realtime Database URL of the same project, for example `https://your-project-default-rtdb.firebaseio.com/`. Real storage needs this together with the service account. |
 
-- `GEMINI_API_KEY`: a key from Google AI Studio. Leave it empty to keep using the mock AI described above.
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: the Firebase service account JSON for a project, pasted as one line and wrapped in single quotes. Leave it empty to keep using the in-memory store.
-- `GEMINI_MODEL`: optional. A specific Gemini model id. Leave it empty and the app picks a current model for itself.
-- `DAILY_AI_CALL_CAP`: optional. The per-profile daily AI call cap described under Limits below. Defaults to 60 when not set.
+The service account JSON must be flattened to one line and wrapped in single quotes. Recipe: open the downloaded JSON file, join all of it onto a single line, and put single quotes around the whole thing, exactly like this:
 
-Run `npm run check` at any time; it verifies whichever of these you have set, against the real services, without touching the ones left empty.
+```
+FIREBASE_SERVICE_ACCOUNT_JSON='{"project_id":"...","client_email":"...","private_key":"..."}'
+```
 
-`.env.local` is never committed: it is listed in `.gitignore`, and only `.env.example`, which holds no real values, is checked in.
+If you would rather set the variables for one PowerShell session than create the file:
+
+```
+$env:OPENROUTER_API_KEY = "your key here"
+$env:FIREBASE_SERVICE_ACCOUNT_JSON = '{"project_id":"...","client_email":"...","private_key":"..."}'
+$env:FIREBASE_DATABASE_URL = "https://your-project-default-rtdb.firebaseio.com/"
+npm run dev
+```
+
+Run `npm run check` any time. It verifies whichever secrets you did set against the real OpenRouter and Firebase services and prints one line per check:
+
+- `OK: OPENROUTER_API_KEY present`: the key is set.
+- `OK: OpenRouter reachable (model ...)`: a real call to the model answered, and the model in use is named.
+- `OK: FIREBASE_SERVICE_ACCOUNT_JSON present (parsed as JSON)`: the JSON has the fields the app needs.
+- `OK: Realtime Database reachable`: a write and read back to a fixed health path in your database worked.
+
+Anything you left empty is reported as SKIPPED, not FAIL, and the script only exits with an error when something you did configure does not work.
+
+The AI model chain: with `OPENROUTER_MODEL` empty, every AI job first tries the free `google/gemma-4-31b-it:free`. When that model answers 429 or a quota or credits error, the app automatically retries the same call once with the paid `google/gemma-4-31b-it`. Setting `OPENROUTER_MODEL` replaces this whole chain with that single model id.
+
+`.env.local` holds only local secrets and is never committed; only `.env.example`, which contains no real values, is checked in.
 
 ## Scripts
 
@@ -48,52 +73,40 @@ Run `npm run check` at any time; it verifies whichever of these you have set, ag
 | --- | --- |
 | `npm run dev` | Starts the development server. |
 | `npm run build` | Creates a production build. |
-| `npm run start` | Runs the production build that `build` created. |
+| `npm run start` | Serves the production build. |
 | `npm run lint` | Runs ESLint over the project. |
-| `npm run check` | Verifies whichever of `GEMINI_API_KEY` and `FIREBASE_SERVICE_ACCOUNT_JSON` are set, against the real services, and prints the model in use. |
-| `npm run list-models` | Prints the Gemini model ids the configured key can use. |
-| `npm run smoke:ai` | Runs all five AI jobs, the four text jobs on the sample notes and the scanned-PDF job on a bundled test file, and checks the shape of every answer. |
-| `npm run test:routes` | Runs the three route test scripts in sequence, with no server running. |
-| `npm run test:e2e` | Runs the Robot Framework end-to-end suite, which builds and starts the app itself. |
+| `npm run check` | Verifies the secrets you set against the real services and prints the model in use. |
+| `npm run list-models` | Prints the Gemma models OpenRouter lists publicly and the model chain the app would use. |
+| `npm run smoke:ai` | Runs every AI job on the bundled sample notes, plus the scanned-PDF job on `robot/data/test.pdf`, and validates the shape of every answer, in whichever mode the environment gives. |
+| `npm run test:routes` | Runs the five API route test scripts in sequence, in plain Node.js, with no server running. |
+| `npm run test:e2e` | Runs the Robot Framework end-to-end suite under `robot/`. |
 
-## Tests
+The e2e suite needs Python 3 with the `py` launcher on the PATH, and the pinned packages from `robot/requirements.txt` installed once per machine:
 
-Two kinds of automated test exist.
+```
+py -m pip install -r robot/requirements.txt
+py -m Browser.entry init
+```
 
-`npm run test:routes` runs three scripts, `scripts/test-ingest.ts`, `scripts/test-quiz.ts` and `scripts/test-insight.ts`, that call the API route handlers directly, in plain Node.js, with no server running.
+It then runs `npm run build` itself, serves the app on port 3105 in forced fallback mode (mock AI, memory store, no secrets needed, same result every time), runs every test in a real Chromium browser, and stops the app afterwards. A full run includes a production build, so expect a few minutes. When nothing under `src/` has changed since the last build, skip it:
 
-`npm run test:e2e` runs the Robot Framework suite under `robot/`. It builds and starts the app itself, on port 3105, in forced mock mode, so it needs no secrets and gives the same result every time. See `robot/README.md` for the install steps this needs first.
+```
+$env:EDUBUDDY_SKIP_BUILD = "1"; npm run test:e2e
+```
 
-## Project layout
+Results land in `robot/results`; see `robot/README.md` for details.
 
-The top-level folders:
+## Deploying
 
-- `docs/`: the project specification, `spec.md`, the contract this README follows.
-- `public/`: static files served as-is; currently the standard font metrics `pdfjs-dist` needs so it can read PDFs that do not embed their own fonts.
-- `robot/`: the end-to-end test suite. See `robot/README.md`.
-- `scripts/`: small command-line programs: the AI checks described above, and the route tests.
-- `src/`: the application itself.
+1. Push the repository to the team branch, `development_umar`.
+2. Import the project in Vercel from that branch.
+3. Add the same four environment variables from the table above in the Vercel project settings.
+4. Deploy, done.
 
-The main subfolders of `src/`:
+Vercel's free tier is enough to run the app, as are the free tiers of OpenRouter and Firebase for a demo.
 
-- `src/app/`: pages and routes, using the Next.js App Router. `src/app/api/` holds the backend routes; `src/app/dev/preview` is a development-only preview page.
-- `src/components/`: shared UI building blocks in `ui/`, and the components for each screen (`dashboard/`, `notes/`, `quiz/`, `results/`, `status/`, `study/`, `upload/`).
-- `src/content/`: the bundled sample lecture notes behind "Try sample notes".
-- `src/lib/`: shared code: types, environment reading, the API client, formatting, size limits, PDF text extraction, quiz grading, the AI layer (`src/lib/ai/`), and the storage layer (`src/lib/store/`).
+## Known limitations
 
-## Deploy on Vercel
-
-Push the repository to GitHub. Import it in Vercel. Add `GEMINI_API_KEY` and `FIREBASE_SERVICE_ACCOUNT_JSON`, the same two secrets described above, as environment variables in the Vercel project. Deploy. Nothing else is needed: the free tiers of Vercel, Google AI Studio and Firebase are enough to run a demo.
-
-## Limits worth knowing
-
-These limits keep a shared demo usable for everyone and keep AI costs bounded. They are defined in full in `docs/spec.md`.
-
-- Each profile (each browser) can make at most 60 AI calls per day; the count resets at UTC midnight.
-- Each IP address is limited to 60 requests per minute, across every route.
-- Pasted text is capped at 300,000 characters.
-- A PDF with readable text can be up to 25 MiB. A PDF with no readable text, which is sent to the AI to read directly, is capped at a smaller 3 MiB, so that it still fits in one request.
-
-## Privacy
-
-There is no account system of any kind. On first visit, the browser generates a random profile id and stores it in `localStorage`; every request to the app carries that id, and the server keeps every note, quiz and result under it. Progress therefore belongs to the browser it was made in: clearing that browser's storage, or visiting from a different browser, starts over with a new, empty profile. The text of anything uploaded is kept on the server (in memory, or in Firestore once configured) so that quizzes, explanations and the study plan can be built from it later.
+- Scanned, image-only PDFs are not supported by the current AI, which receives text only. Upload a PDF with selectable text, or paste the notes.
+- Each browser is a separate profile. Progress made in one browser does not appear in another, and clearing a browser's storage starts a new, empty profile.
+- The free model has rate limits. The app absorbs them by retrying on the paid model, so the OpenRouter account should hold a small credit balance for busy moments.
