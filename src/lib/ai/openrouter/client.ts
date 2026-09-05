@@ -289,6 +289,11 @@ async function attemptGenerate<T>(args: {
       result = await chatOnce({ model, prompt, temperature, jsonSchema: null });
     }
   } catch (error) {
+    // Let HTTP errors through so the model chain can read the status and
+    // fall back on quota failures; everything else is mapped for students.
+    if (error instanceof OpenRouterHttpError) {
+      throw error;
+    }
     throw toAiError(error);
   }
   recordAnsweredModel(result.answeredModel);
