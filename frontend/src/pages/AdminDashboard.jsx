@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { HiOutlineBuildingLibrary, HiOutlineExclamationTriangle, HiOutlineChartPie, HiOutlineUsers, HiOutlineBell, HiOutlineCalendarDays, HiOutlineShoppingCart, HiOutlineCheckCircle, HiOutlineArrowPath, HiOutlineClipboardDocumentList } from 'react-icons/hi2';
+import { getAdminOverview } from '../services/api';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -70,6 +71,20 @@ export default function AdminDashboard() {
   const [actioned, setActioned] = useState({});
   const [filter, setFilter] = useState('all');
   const [log, setLog] = useState([]);
+  const [live, setLive] = useState(null);
+
+  // Real school-wide data when the backend has it; mock alerts as fallback
+  // so the page always demos well, even on a fresh empty database.
+  useEffect(() => {
+    let cancelled = false;
+    getAdminOverview()
+      .then(data => { if (!cancelled && data?.stats) setLive(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const alertsSource = live?.alerts?.length > 0 ? live.alerts : resourceAlerts;
+  const stats = live?.stats;
 
   const now = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -89,14 +104,14 @@ export default function AdminDashboard() {
     setLog(prev => [{ time: now(), text: `Undid "${label}" on ${alert.subject}.` }, ...prev]);
   };
 
-  const openCount = resourceAlerts.filter(a => !actioned[a.id]).length;
-  const actionedCount = resourceAlerts.length - openCount;
+  const openCount = alertsSource.filter(a => !actioned[a.id]).length;
+  const actionedCount = alertsSource.length - openCount;
   const filters = [
-    { key: 'all', label: `All (${resourceAlerts.length})` },
+    { key: 'all', label: `All (${alertsSource.length})` },
     { key: 'open', label: `Open (${openCount})` },
     { key: 'actioned', label: `Actioned (${actionedCount})` },
   ];
-  const visibleAlerts = resourceAlerts.filter(a =>
+  const visibleAlerts = alertsSource.filter(a =>
     filter === 'all' ? true : filter === 'open' ? !actioned[a.id] : Boolean(actioned[a.id])
   );
 
@@ -117,22 +132,22 @@ export default function AdminDashboard() {
         <div className="stat-card">
           <div className="stat-icon purple"><HiOutlineBuildingLibrary /></div>
           <div className="stat-info">
-            <h3>42</h3>
+            <h3>{stats ? stats.activeClasses : 42}</h3>
             <p>Active Classes</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon blue"><HiOutlineUsers /></div>
           <div className="stat-info">
-            <h3>1,204</h3>
+            <h3>{stats ? stats.totalStudents.toLocaleString() : '1,204'}</h3>
             <p>Total Students</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><HiOutlineChartPie /></div>
           <div className="stat-info">
-            <h3>82%</h3>
-            <p>School Avg Score</p>
+            <h3>{stats ? (stats.schoolAvgScore ?? '—') : '82%'}{stats && stats.schoolAvgScore !== null ? '%' : ''}</h3>
+            <p>School Avg Score {stats ? `· ${stats.quizzesTaken} quizzes` : ''}</p>
           </div>
         </div>
       </motion.div>
@@ -143,6 +158,11 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <HiOutlineExclamationTriangle style={{ fontSize: '1.5rem', color: '#EF4444' }} />
             <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Resource Allocation Alerts</h2>
+            {live && (
+              <span style={{ fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.5px', padding: '0.2rem 0.55rem', borderRadius: '9999px', background: live.alerts?.length ? '#DCFCE7' : '#F3F4F6', color: live.alerts?.length ? '#16A34A' : '#9CA3AF' }}>
+                {live.alerts?.length ? 'LIVE DATA' : 'LIVE · no alerts yet, showing sample'}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {filters.map(f => (

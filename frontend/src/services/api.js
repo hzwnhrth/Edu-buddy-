@@ -129,6 +129,15 @@ export function chatWithTutor(message, materialId = undefined, history = [], ima
 }
 
 /**
+ * getAdminOverview
+ * School-wide analytics for the Admin Dashboard: real stats and alerts
+ * aggregated across every profile in the database.
+ */
+export function getAdminOverview() {
+  return apiFetch('/admin/overview');
+}
+
+/**
  * getStatus
  * Health check: which AI and store backends are live.
  */
