@@ -25,6 +25,12 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100, damping: 15 } }
 };
 
+/**
+ * Landing Page Component
+ * The first screen users see when they visit the app (the hero section).
+ * It introduces the app, its features, and provides a "Get Started" button
+ * that redirects to the Dashboard.
+ */
 export default function Landing() {
   const navigate = useNavigate();
 

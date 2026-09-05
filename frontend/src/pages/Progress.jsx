@@ -3,6 +3,12 @@ import { useAppContext } from '../context/AppContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { HiOutlineTrophy, HiOutlineChartBar, HiOutlineBookOpen, HiOutlineQuestionMarkCircle } from 'react-icons/hi2';
 
+/**
+ * Progress Component
+ * Displays the student's historical data, such as past quiz results and 
+ * notes generated. It retrieves this data from the global AppContext and
+ * renders it in lists/grids.
+ */
 export default function Progress() {
   const { stats, quizHistory } = useAppContext();
 

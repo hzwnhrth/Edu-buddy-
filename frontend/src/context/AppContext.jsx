@@ -1,9 +1,18 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 
+/**
+ * AppContext
+ * Creates a global state context so that data (like study content, history, stats)
+ * can be shared across all pages without having to pass props down manually.
+ */
 const AppContext = createContext();
 
 const STORAGE_KEY = 'edubuddy_data';
 
+/**
+ * Default Initial State
+ * The starting data structure for a new user before they generate anything.
+ */
 const defaultState = {
   studyContent: null,       // Currently uploaded/active content text
   notesHistory: [],          // Past generated notes
@@ -20,6 +29,11 @@ const defaultState = {
   },
 };
 
+/**
+ * loadState()
+ * Attempts to load the user's saved data from the browser's localStorage.
+ * If none exists or it fails, it returns the defaultState.
+ */
 function loadState() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -32,6 +46,11 @@ function loadState() {
   return defaultState;
 }
 
+/**
+ * AppProvider Component
+ * This wrapper component manages the state and provides the context to its children.
+ * It contains helper functions to update the state (like adding a quiz result).
+ */
 export function AppProvider({ children }) {
   const [state, setState] = useState(loadState);
 
@@ -102,6 +121,11 @@ export function AppProvider({ children }) {
   );
 }
 
+/**
+ * useAppContext Hook
+ * A custom React hook that allows any component to easily access the global state
+ * and the helper functions provided by AppProvider.
+ */
 export function useAppContext() {
   const context = useContext(AppContext);
   if (!context) {

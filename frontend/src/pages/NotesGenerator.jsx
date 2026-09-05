@@ -5,6 +5,12 @@ import { useAppContext } from '../context/AppContext';
 import { generateNotes } from '../services/api';
 import { HiOutlineDocumentArrowUp, HiOutlineDocumentText, HiOutlineSparkles, HiOutlineArrowPath, HiOutlineClock } from 'react-icons/hi2';
 
+/**
+ * NotesGenerator Component
+ * Allows users to upload a PDF file or paste text. It sends this data to the
+ * backend API to generate study materials (notes, flashcards, key points).
+ * It also displays a history of recently generated notes.
+ */
 export default function NotesGenerator() {
   const { setStudyContent, addNotesResult, notesHistory } = useAppContext();
   const [file, setFile] = useState(null);

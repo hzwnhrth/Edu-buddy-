@@ -10,6 +10,11 @@ const pageTitles = {
   '/progress': 'Progress',
 };
 
+/**
+ * Navbar Component
+ * Renders the top navigation bar. It displays the current page title dynamically
+ * based on the route, and includes the SDG 4 badge and a user profile icon.
+ */
 export default function Navbar() {
   const location = useLocation();
   const title = pageTitles[location.pathname] || 'EduBuddy AI';

@@ -4,6 +4,12 @@ import { useAppContext } from '../context/AppContext';
 import { generateQuiz, gradeQuiz } from '../services/api';
 import { HiOutlineLightBulb, HiOutlineArrowRight, HiOutlineArrowPath, HiOutlineCheckCircle, HiOutlineXCircle, HiOutlineCheck } from 'react-icons/hi2';
 
+/**
+ * QuizArena Component
+ * Handles the generation, rendering, and grading of quizzes. 
+ * Allows students to select difficulty and number of questions. It tracks their 
+ * answers in real-time, grades them via the API, and displays a results screen.
+ */
 export default function QuizArena() {
   const { studyContent, addQuizResult } = useAppContext();
   const [difficulty, setDifficulty] = useState('medium');

@@ -4,6 +4,12 @@ import { useAppContext } from '../context/AppContext';
 import { chatWithTutor } from '../services/api';
 import { HiOutlinePaperAirplane, HiOutlineTrash, HiOutlineChatBubbleLeftRight, HiOutlineAcademicCap } from 'react-icons/hi2';
 
+/**
+ * TutorChat Component
+ * Provides a chat interface for the student to converse with the AI Tutor.
+ * It manages the local message history, handles sending messages to the backend API,
+ * and displays loading states while waiting for the AI response.
+ */
 export default function TutorChat() {
   const { studyContent, chatHistory, addChatMessage, clearChatHistory } = useAppContext();
   const [input, setInput] = useState('');

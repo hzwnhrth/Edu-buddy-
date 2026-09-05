@@ -20,6 +20,12 @@ function getGreeting() {
   return { text: 'Good evening' };
 }
 
+/**
+ * Dashboard Component
+ * The main hub for the student. It displays their high-level stats (streak, 
+ * quizzes taken, average score) and provides quick links/buttons to jump 
+ * into the main features of the app (Notes, Quizzes, Chat).
+ */
 export default function Dashboard() {
   const { stats, notesHistory, quizHistory } = useAppContext();
   const greeting = getGreeting();

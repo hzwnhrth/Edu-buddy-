@@ -9,6 +9,11 @@ const navItems = [
   { to: '/progress', icon: HiOutlineChartBar, label: 'Progress' },
 ];
 
+/**
+ * Sidebar Component
+ * Renders the side navigation menu. Contains links to all the main features
+ * (Dashboard, Notes Generator, etc.) and the Demo Views switcher at the bottom.
+ */
 export default function Sidebar() {
   return (
     <aside className="sidebar">
@@ -33,10 +38,19 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #E5E7EB' }}>
-        <div style={{ fontSize: '0.75rem', color: '#9CA3AF', textAlign: 'center', fontWeight: 600 }}>
-          EduBuddy v1.0
+      <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid #E5E7EB', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontSize: '0.65rem', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800, marginBottom: '0.25rem' }}>
+          Demo Views
         </div>
+        <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
+          Student View
+        </NavLink>
+        <NavLink to="/teacher-dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
+          Teacher View
+        </NavLink>
+        <NavLink to="/admin-dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
+          Admin View
+        </NavLink>
       </div>
     </aside>
   );

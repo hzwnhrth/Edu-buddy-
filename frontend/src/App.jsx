@@ -8,8 +8,16 @@ import NotesGenerator from './pages/NotesGenerator';
 import QuizArena from './pages/QuizArena';
 import TutorChat from './pages/TutorChat';
 import Progress from './pages/Progress';
+import TeacherDashboard from './pages/TeacherDashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import './App.css';
 
+/**
+ * AppLayout Component
+ * Handles the main layout of the application, including the Sidebar and Navbar.
+ * It also manages routing between different pages. If the user is on the root path ('/'),
+ * it renders the Landing page without the Sidebar/Navbar wrapper.
+ */
 function AppLayout() {
   const location = useLocation();
   const isLanding = location.pathname === '/';
@@ -29,6 +37,8 @@ function AppLayout() {
           <Route path="/quiz" element={<QuizArena />} />
           <Route path="/chat" element={<TutorChat />} />
           <Route path="/progress" element={<Progress />} />
+          <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
+          <Route path="/admin-dashboard" element={<AdminDashboard />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
@@ -36,6 +46,11 @@ function AppLayout() {
   );
 }
 
+/**
+ * Main App Component
+ * Wraps the entire application with necessary context providers (AppProvider)
+ * and the routing configuration (Router).
+ */
 function App() {
   return (
     <AppProvider>
