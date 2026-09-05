@@ -67,6 +67,7 @@ export class MemoryStore implements Store {
       id,
       createdAt: now,
       lastSeenAt: now,
+      displayName: null,
       latestFeedback: null,
       latestFeedbackAt: null,
       aiCallsToday: 0,

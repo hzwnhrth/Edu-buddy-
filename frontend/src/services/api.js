@@ -16,11 +16,21 @@ export function getProfileId() {
 }
 
 async function apiFetch(path, { method = 'GET', body } = {}) {
+  // Opportunistic display-name sync: the backend stores the signed-in
+  // user's name on any request, so the teacher's classroom view shows
+  // real names without a separate update call.
+  let displayName = null;
+  try {
+    const saved = JSON.parse(localStorage.getItem('edubuddy_data') || '{}');
+    displayName = saved.currentUser?.name || null;
+  } catch { /* ignore */ }
+
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
       'x-profile-id': getProfileId(),
+      ...(displayName ? { 'x-display-name': displayName } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -135,6 +145,15 @@ export function chatWithTutor(message, materialId = undefined, history = [], ima
  */
 export function getAdminOverview() {
   return apiFetch('/admin/overview');
+}
+
+/**
+ * getTeacherClassroom
+ * The class roster for the Teacher Dashboard's Classroom View: per-student
+ * mastery, status color, weak topics and the weakness table rows.
+ */
+export function getTeacherClassroom() {
+  return apiFetch('/teacher/classroom');
 }
 
 /**

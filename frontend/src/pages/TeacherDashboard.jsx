@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { HiOutlineUserGroup, HiOutlineExclamationCircle, HiOutlineAcademicCap, HiOutlineEye } from 'react-icons/hi2';
+import { HiOutlineUserGroup, HiOutlineExclamationCircle, HiOutlineAcademicCap, HiOutlineEye, HiOutlineUser } from 'react-icons/hi2';
 import { FaMale, FaFemale } from 'react-icons/fa';
 import NotesStudio from '../components/NotesStudio';
+import { getTeacherClassroom } from '../services/api';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -44,13 +46,37 @@ const strugglingStudents = [
 
 /**
  * TeacherDashboard Component
- * Provides a mock view for teachers to monitor their classroom.
- * Features a "Cinema Concept" visual layout showing which students are struggling (red),
- * doing okay (yellow), or excelling (green). Uses static mock data for demonstration.
+ * Monitors the classroom: mastery cards per student, stats, and the
+ * weakness table. Loads real data from /api/teacher/classroom when the
+ * backend has it; falls back to the sample roster so the page always
+ * demos well on an empty database.
  */
 export default function TeacherDashboard() {
+  const [live, setLive] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getTeacherClassroom()
+      .then(data => { if (!cancelled && data?.stats) setLive(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const useLiveStudents = live?.students?.length > 0;
+  const roster = useLiveStudents
+    ? live.students.map(s => ({
+        id: s.id,
+        name: s.name,
+        gender: null,
+        mastery: s.mastery ?? 0,
+        status: s.status,
+      }))
+    : classroomData;
+  const weaknessRows = useLiveStudents && live.weaknessRows?.length > 0 ? live.weaknessRows : strugglingStudents;
+  const stats = useLiveStudents ? live.stats : null;
+
   return (
-    <motion.div 
+    <motion.div
       className="page-container"
       initial="hidden"
       animate="visible"
@@ -58,7 +84,11 @@ export default function TeacherDashboard() {
     >
       <motion.div className="page-header" variants={itemVariants}>
         <h1>Teacher Dashboard</h1>
-        <p>Form 4 Science • Class Overview & Analytics</p>
+        <p>Form 4 Science • Class Overview & Analytics {useLiveStudents && (
+          <span style={{ fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.5px', padding: '0.2rem 0.55rem', borderRadius: '9999px', background: '#DCFCE7', color: '#16A34A', verticalAlign: 'middle', marginLeft: '0.4rem' }}>
+            LIVE DATA
+          </span>
+        )}</p>
       </motion.div>
 
       {/* Top Stats */}
@@ -66,21 +96,21 @@ export default function TeacherDashboard() {
         <div className="stat-card">
           <div className="stat-icon blue"><HiOutlineUserGroup /></div>
           <div className="stat-info">
-            <h3>10</h3>
+            <h3>{stats ? stats.totalStudents : 10}</h3>
             <p>Total Students</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon red"><HiOutlineExclamationCircle /></div>
           <div className="stat-info">
-            <h3 style={{ color: '#EF4444' }}>2</h3>
+            <h3 style={{ color: '#EF4444' }}>{stats ? stats.needAttention : 2}</h3>
             <p>Need Attention</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><HiOutlineAcademicCap /></div>
           <div className="stat-info">
-            <h3>68%</h3>
+            <h3>{stats ? (stats.classAvgScore ?? '—') : 68}{stats && stats.classAvgScore !== null ? '%' : ''}</h3>
             <p>Class Avg Score</p>
           </div>
         </div>
@@ -104,7 +134,7 @@ export default function TeacherDashboard() {
           gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
           gap: '1rem',
         }}>
-          {classroomData.map((student) => {
+          {roster.map((student) => {
             const meta = statusMeta[student.status];
             return (
               <motion.div
@@ -118,7 +148,7 @@ export default function TeacherDashboard() {
                   textAlign: 'center',
                   cursor: 'pointer',
                 }}
-                title={`${student.name} (${student.gender === 'boy' ? 'boy' : 'girl'}) — ${meta.label}, ${student.mastery}% mastery`}
+                title={`${student.name} — ${meta.label}, ${student.mastery}% mastery`}
               >
                 {/* Mastery ring avatar */}
                 <div style={{
@@ -140,9 +170,13 @@ export default function TeacherDashboard() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', marginBottom: '0.35rem' }}>
-                  {student.gender === 'boy'
-                    ? <FaMale style={{ color: meta.color, fontSize: '0.95rem' }} />
-                    : <FaFemale style={{ color: meta.color, fontSize: '0.95rem' }} />}
+                  {student.gender === 'boy' ? (
+                    <FaMale style={{ color: meta.color, fontSize: '0.95rem' }} />
+                  ) : student.gender === 'girl' ? (
+                    <FaFemale style={{ color: meta.color, fontSize: '0.95rem' }} />
+                  ) : (
+                    <HiOutlineUser style={{ color: meta.color, fontSize: '0.95rem' }} />
+                  )}
                   <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#111827' }}>{student.name}</span>
                 </div>
 
@@ -181,8 +215,8 @@ export default function TeacherDashboard() {
               </tr>
             </thead>
             <tbody>
-              {strugglingStudents.map((s) => (
-                <tr key={s.id} style={{ borderBottom: '1px solid #E5E7EB', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              {weaknessRows.map((s, idx) => (
+                <tr key={s.id || `row-${idx}`} style={{ borderBottom: '1px solid #E5E7EB', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#F9FAFB'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td style={{ padding: '1rem', fontWeight: 600, color: '#111827' }}>{s.name}</td>
                   <td style={{ padding: '1rem', color: '#EF4444', fontWeight: 600 }}>{s.topic}</td>
                   <td style={{ padding: '1rem', color: '#6B7280', fontWeight: 600 }}>{s.score}</td>
