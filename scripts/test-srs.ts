@@ -1,9 +1,10 @@
-import { TEKS_SEJARAH_T4_BANK } from "@/content/teks-sejarah-t4-bank";
+import { QUIZ_BANKS } from "@/content/quiz-banks";
+import { buildSessionQuestions, nextDueLabel, selectSessionQuestions } from "@/lib/quiz-bank";
 import { isDue, newCardSchedule, scheduleReview, type CardSchedule } from "@/lib/spaced-repetition";
 
-// Exercises the T4 question bank and the spaced-repetition scheduler the way
-// scripts/test-quiz.ts exercises the quiz routes: pure logic, no server, no
-// secrets. Exits 1 if any case fails.
+// Exercises the bundled quiz banks and the spaced-repetition layer (scheduler
+// plus session builder) the way scripts/test-quiz.ts exercises the quiz
+// routes: pure logic, no server, no secrets. Exits 1 if any case fails.
 
 let failureCount = 0;
 
@@ -26,19 +27,25 @@ function check(condition: boolean, label: string, detail?: unknown): void {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+function canonical(values: readonly string[]): string {
+  return JSON.stringify([...values].sort());
+}
+
 async function main(): Promise<void> {
-  // (a) bank integrity: 5 questions, unique ids and stems, 4 distinct options,
-  // a valid answer index and a non-empty explanation each.
-  check(TEKS_SEJARAH_T4_BANK.length === 5, "(a) bank has 5 questions", TEKS_SEJARAH_T4_BANK.length);
-  const qids = new Set(TEKS_SEJARAH_T4_BANK.map((question) => question.qid));
-  check(qids.size === TEKS_SEJARAH_T4_BANK.length, "(a) question ids are unique");
+  const bank = QUIZ_BANKS[0];
+
+  // (a) bank integrity: 10 questions, unique ids, 4 distinct options, a valid
+  // answer index and a non-empty explanation each.
+  check(bank.questions.length === 10, "(a) bank has 10 questions", bank.questions.length);
+  const qids = new Set(bank.questions.map((question) => question.qid));
+  check(qids.size === bank.questions.length, "(a) question ids are unique");
   check(
-    TEKS_SEJARAH_T4_BANK.every(
+    bank.questions.every(
       (question) =>
         question.options.length === 4 &&
         new Set(question.options).size === 4 &&
-        question.correctAnswerIndex >= 0 &&
-        question.correctAnswerIndex <= 3 &&
+        question.answerIndex >= 0 &&
+        question.answerIndex <= 3 &&
         question.explanation.trim().length > 0
     ),
     "(a) every question has 4 distinct options, a valid answer index and an explanation"
@@ -107,12 +114,79 @@ async function main(): Promise<void> {
   // (i) a freshly reviewed card is not due.
   check(!isDue(firstGood, new Date("2026-01-01T09:00:00Z")), "(i) a card scheduled for tomorrow is not due now");
 
+  // (j) scrambling: over 25 rounds every session keeps every original
+  // question and its exact correct answer text (options reshuffled, index
+  // remapped), and at least one round differs from the bank's own order.
+  const schedules = bank.questions.map((question) => newCardSchedule(question.qid));
+  let scrambleVaries = false;
+  let scramblesHold = true;
+  for (let round = 0; round < 25; round += 1) {
+    const session = buildSessionQuestions(bank, schedules, 10);
+    if (
+      session.length !== 10 ||
+      session[0].qid !== bank.questions[0].qid ||
+      session[0].options[0] !== bank.questions[0].options[0]
+    ) {
+      scrambleVaries = true;
+    }
+    for (const original of bank.questions) {
+      const shown = session.find((entry) => entry.qid === original.qid);
+      if (
+        !shown ||
+        canonical(shown.options) !== canonical(original.options) ||
+        shown.options[shown.correctAnswerIndex] !== original.options[original.answerIndex]
+      ) {
+        scramblesHold = false;
+      }
+    }
+  }
+  check(scramblesHold, "(j) every scrambled session keeps all questions and the correct answer at the marked index");
+  check(scrambleVaries, "(j) scrambling varies question or option order across rounds");
+
+  // (k) session selection: due cards come first, the count caps the session,
+  // and not-due cards only fill the remaining slots.
+  const now = new Date("2026-01-01T09:00:00Z");
+  const past = "2025-12-01T09:00:00Z";
+  const future = new Date(now.getTime() + 5 * DAY).toISOString();
+  const custom: CardSchedule[] = bank.questions.map((question, i) => ({
+    ...newCardSchedule(question.qid, now),
+    repetitions: 1,
+    dueAt: i < 3 ? past : future,
+  }));
+  const dueIds = new Set(bank.questions.slice(0, 3).map((question) => question.qid));
+  const selectedAll = selectSessionQuestions(bank, custom, 10, now);
+  check(selectedAll.length === 10, "(k) a count of 10 selects every card", selectedAll.length);
+  check(
+    new Set(selectedAll.slice(0, 3).map((question) => question.qid)).size === 3 &&
+      selectedAll.slice(0, 3).every((question) => dueIds.has(question.qid)),
+    "(k) the three due cards are selected first"
+  );
+  const selectedThree = selectSessionQuestions(bank, custom, 3, now);
+  check(
+    selectedThree.length === 3 &&
+      selectedThree.every((question) => dueIds.has(question.qid)),
+    "(k) a count of 3 selects exactly the three due cards"
+  );
+
+  // (l) next-due labels.
+  const labelNow = nextDueLabel([{ ...newCardSchedule("x"), dueAt: "2026-01-01T08:59:00Z" }], now);
+  check(labelNow === "now", "(l) an overdue schedule reads 'now'", labelNow);
+  const labelMinutes = nextDueLabel(
+    [{ ...newCardSchedule("x"), dueAt: new Date(now.getTime() + 25 * 60 * 1000).toISOString() }],
+    now
+  );
+  check(labelMinutes === "in about 25 minutes", "(l) 25 minutes out reads 'in about 25 minutes'", labelMinutes);
+  const labelHours = nextDueLabel([{ ...newCardSchedule("x"), dueAt: new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString() }], now);
+  check(labelHours === "in about 3 hours", "(l) 3 hours out reads 'in about 3 hours'", labelHours);
+  const labelDays = nextDueLabel([{ ...newCardSchedule("x"), dueAt: new Date(now.getTime() + 2 * DAY).toISOString() }], now);
+  check(labelDays === "in about 2 days", "(l) 2 days out reads 'in about 2 days'", labelDays);
+
   console.log("");
   if (failureCount > 0) {
     console.error(`${failureCount} check(s) failed`);
     process.exit(1);
   }
-  console.log("All spaced-repetition and bank checks passed");
+  console.log("All spaced-repetition, scramble and session checks passed");
 }
 
 void main();
