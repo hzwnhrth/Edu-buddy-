@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion';
 import { HiOutlineUserGroup, HiOutlineExclamationCircle, HiOutlineAcademicCap, HiOutlineEye } from 'react-icons/hi2';
+import { FaMale, FaFemale } from 'react-icons/fa';
+import NotesStudio from '../components/NotesStudio';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -11,22 +13,33 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100, damping: 15 } }
 };
 
-// Mock data for the "Cinema Concept" classroom grid
-const classroomData = Array.from({ length: 30 }, (_, i) => {
-  // 5 students struggling (Red), 10 doing okay (Yellow), 15 excelling (Green)
-  let status = 'green';
-  if ([2, 7, 14, 21, 28].includes(i)) status = 'red';
-  else if ([4, 9, 11, 15, 18, 22, 23, 25, 27, 29].includes(i)) status = 'yellow';
-  
-  return { id: i + 1, name: `Student ${i + 1}`, status };
-});
+// Mock data for the Classroom View — 10 students with names, gender and
+// mastery percentage. Same shape a real class roster API would return.
+const classroomData = [
+  { id: 1, name: 'Aiman', gender: 'boy', mastery: 92, status: 'green' },
+  { id: 2, name: 'Siti', gender: 'girl', mastery: 88, status: 'green' },
+  { id: 3, name: 'Wei Jie', gender: 'boy', mastery: 38, status: 'red' },
+  { id: 4, name: 'Priya', gender: 'girl', mastery: 85, status: 'green' },
+  { id: 5, name: 'Daniel', gender: 'boy', mastery: 62, status: 'yellow' },
+  { id: 6, name: 'Nurul', gender: 'girl', mastery: 90, status: 'green' },
+  { id: 7, name: 'Hafiz', gender: 'boy', mastery: 35, status: 'red' },
+  { id: 8, name: 'Mei Ling', gender: 'girl', mastery: 58, status: 'yellow' },
+  { id: 9, name: 'Arjun', gender: 'boy', mastery: 65, status: 'yellow' },
+  { id: 10, name: 'Farah', gender: 'girl', mastery: 87, status: 'green' },
+];
+
+const statusMeta = {
+  red: { color: '#EF4444', label: 'Immediate Attention' },
+  yellow: { color: '#F59E0B', label: 'Needs Practice' },
+  green: { color: '#22C55E', label: 'Mastering' },
+};
 
 const strugglingStudents = [
-  { id: 3, name: 'Student 3', topic: 'Cell Division (Mitosis)', score: '42%', lastActive: '2h ago' },
-  { id: 8, name: 'Student 8', topic: 'Algebraic Expressions', score: '38%', lastActive: '1d ago' },
-  { id: 15, name: 'Student 15', topic: 'Chemical Bonding', score: '45%', lastActive: '5h ago' },
-  { id: 22, name: 'Student 22', topic: 'Cell Division (Meiosis)', score: '41%', lastActive: '3h ago' },
-  { id: 29, name: 'Student 29', topic: 'Trigonometry', score: '35%', lastActive: '4d ago' },
+  { id: 3, name: 'Wei Jie', topic: 'Chemical Bonding', score: '38%', lastActive: '1d ago' },
+  { id: 7, name: 'Hafiz', topic: 'Cell Division (Mitosis)', score: '42%', lastActive: '2h ago' },
+  { id: 5, name: 'Daniel', topic: 'Acids & Bases', score: '51%', lastActive: '5h ago' },
+  { id: 8, name: 'Mei Ling', topic: 'Photosynthesis', score: '55%', lastActive: '3h ago' },
+  { id: 9, name: 'Arjun', topic: 'Electricity & Circuits', score: '58%', lastActive: '1d ago' },
 ];
 
 /**
@@ -53,78 +66,104 @@ export default function TeacherDashboard() {
         <div className="stat-card">
           <div className="stat-icon blue"><HiOutlineUserGroup /></div>
           <div className="stat-info">
-            <h3>30</h3>
+            <h3>10</h3>
             <p>Total Students</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon red"><HiOutlineExclamationCircle /></div>
           <div className="stat-info">
-            <h3 style={{ color: '#EF4444' }}>5</h3>
+            <h3 style={{ color: '#EF4444' }}>2</h3>
             <p>Need Attention</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><HiOutlineAcademicCap /></div>
           <div className="stat-info">
-            <h3>78%</h3>
+            <h3>68%</h3>
             <p>Class Avg Score</p>
           </div>
         </div>
       </motion.div>
 
-      {/* Cinema Concept Classroom View */}
+      {/* Classroom View: student mastery cards */}
       <motion.div className="card" variants={itemVariants} style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Classroom Mastery (Cinema View)</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Classroom View</h2>
           <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem', fontWeight: 600 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <div style={{ width: 12, height: 12, borderRadius: 4, background: '#EF4444' }} /> Immediate Attention
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <div style={{ width: 12, height: 12, borderRadius: 4, background: '#F59E0B' }} /> Needs Practice
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <div style={{ width: 12, height: 12, borderRadius: 4, background: '#22C55E' }} /> Mastering
-            </span>
+            {Object.entries(statusMeta).map(([key, meta]) => (
+              <span key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <div style={{ width: 12, height: 12, borderRadius: 4, background: meta.color }} /> {meta.label}
+              </span>
+            ))}
           </div>
         </div>
 
-        {/* The Grid (Desks) */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(10, 1fr)', 
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
           gap: '1rem',
-          background: '#FAFBFC',
-          padding: '2rem',
-          borderRadius: '16px',
-          border: '1px solid #E5E7EB'
         }}>
-          {classroomData.map((student) => (
-            <div 
-              key={student.id}
-              style={{
-                aspectRatio: '1',
-                borderRadius: '8px',
-                background: student.status === 'red' ? '#EF4444' : student.status === 'yellow' ? '#F59E0B' : '#22C55E',
-                boxShadow: student.status === 'red' ? '0 0 15px rgba(239, 68, 68, 0.4)' : 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#FFF',
-                fontWeight: 700,
-                fontSize: '0.8rem',
-                cursor: 'pointer',
-                transition: 'transform 0.2s',
-              }}
-              title={`${student.name} - ${student.status.toUpperCase()}`}
-              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-            >
-              {student.id}
-            </div>
-          ))}
+          {classroomData.map((student) => {
+            const meta = statusMeta[student.status];
+            return (
+              <motion.div
+                key={student.id}
+                whileHover={{ y: -4, boxShadow: '0 8px 20px rgba(17, 24, 39, 0.08)' }}
+                style={{
+                  background: '#FFFFFF',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '16px',
+                  padding: '1.25rem 0.75rem',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                }}
+                title={`${student.name} (${student.gender === 'boy' ? 'boy' : 'girl'}) — ${meta.label}, ${student.mastery}% mastery`}
+              >
+                {/* Mastery ring avatar */}
+                <div style={{
+                  width: '72px', height: '72px', borderRadius: '50%', margin: '0 auto 0.6rem auto',
+                  background: `conic-gradient(${meta.color} ${student.mastery * 3.6}deg, #E5E7EB 0deg)`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <div style={{
+                    width: '58px', height: '58px', borderRadius: '50%', background: '#FFFFFF',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#111827', lineHeight: 1 }}>
+                      {student.mastery}%
+                    </span>
+                    <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      mastery
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', marginBottom: '0.35rem' }}>
+                  {student.gender === 'boy'
+                    ? <FaMale style={{ color: meta.color, fontSize: '0.95rem' }} />
+                    : <FaFemale style={{ color: meta.color, fontSize: '0.95rem' }} />}
+                  <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#111827' }}>{student.name}</span>
+                </div>
+
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                  padding: '0.2rem 0.6rem', borderRadius: '9999px',
+                  background: `${meta.color}1A`, color: meta.color,
+                  fontSize: '0.65rem', fontWeight: 800,
+                }}>
+                  <div style={{ width: 6, height: 6, borderRadius: 3, background: meta.color }} />
+                  {meta.label}
+                </span>
+              </motion.div>
+            );
+          })}
         </div>
+      </motion.div>
+
+      {/* Lesson Studio: Generate + Approve Notes (Teacher Only) */}
+      <motion.div className="card" variants={itemVariants} style={{ marginBottom: '2rem' }}>
+        <NotesStudio />
       </motion.div>
 
       {/* Weakness Analytics Table */}

@@ -2,7 +2,49 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
 import { chatWithTutor } from '../services/api';
-import { HiOutlinePaperAirplane, HiOutlineTrash, HiOutlineChatBubbleLeftRight, HiOutlineAcademicCap } from 'react-icons/hi2';
+import { HiOutlinePaperAirplane, HiOutlineTrash, HiOutlineChatBubbleLeftRight, HiOutlineAcademicCap, HiOutlinePaperClip, HiOutlineXMark } from 'react-icons/hi2';
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function downscale(dataUrl, maxDim, mimeType, quality) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL(mimeType, quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+async function fileToImagePayload(file) {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    throw new Error('Only JPEG, PNG, WebP or GIF images are supported.');
+  }
+  const dataUrl = await readAsDataUrl(file);
+  if (file.type === 'image/gif') {
+    return { base64: dataUrl.split(',')[1], mimeType: 'image/gif', thumb: dataUrl };
+  }
+  const [full, thumb] = await Promise.all([
+    downscale(dataUrl, 1024, 'image/jpeg', 0.85),
+    downscale(dataUrl, 240, 'image/jpeg', 0.6),
+  ]);
+  return { base64: full.split(',')[1], mimeType: 'image/jpeg', thumb };
+}
 
 /**
  * TutorChat Component
@@ -11,7 +53,7 @@ import { HiOutlinePaperAirplane, HiOutlineTrash, HiOutlineChatBubbleLeftRight, H
  * and displays loading states while waiting for the AI response.
  */
 export default function TutorChat() {
-  const { studyContent, chatHistory, addChatMessage, clearChatHistory } = useAppContext();
+  const { activeMaterialId, activeMaterialTitle, chatHistory, addChatMessage, clearChatHistory } = useAppContext();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([
@@ -20,25 +62,54 @@ export default function TutorChat() {
     'What should I focus on for an exam?',
   ]);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [pendingImage, setPendingImage] = useState(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, loading]);
 
+  const attachFile = async (file) => {
+    if (!file) return;
+    try {
+      const payload = await fileToImagePayload(file);
+      setPendingImage(payload);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handlePaste = (e) => {
+    const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/'));
+    if (file) {
+      e.preventDefault();
+      attachFile(file);
+    }
+  };
+
   const handleSend = async (message = null) => {
     const msg = message || input.trim();
-    if (!msg || loading) return;
+    if ((!msg && !pendingImage) || loading) return;
 
-    const userMessage = { role: 'user', content: msg };
+    const question = msg || 'What is in this image?';
+    const image = pendingImage;
+
+    const userMessage = {
+      role: 'user',
+      content: question,
+      ...(image?.thumb ? { image: image.thumb } : {}),
+    };
     addChatMessage(userMessage);
     setInput('');
+    setPendingImage(null);
     setLoading(true);
 
     try {
       const response = await chatWithTutor(
-        msg,
-        studyContent,
-        chatHistory.slice(-10)
+        question,
+        activeMaterialId || undefined,
+        chatHistory.slice(-10),
+        image ? { base64: image.base64, mimeType: image.mimeType } : null
       );
       const assistantMessage = { role: 'assistant', content: response.reply };
       addChatMessage(assistantMessage);
@@ -81,7 +152,7 @@ export default function TutorChat() {
         )}
       </div>
 
-      {studyContent && (
+      {activeMaterialId && (
         <motion.div 
           initial={{ y: -8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
           style={{
@@ -91,7 +162,7 @@ export default function TutorChat() {
             display: 'inline-flex', alignItems: 'center', gap: '0.4rem', alignSelf: 'flex-start'
           }}
         >
-          <HiOutlineChatBubbleLeftRight /> Study context loaded — Ask questions about your notes
+          <HiOutlineChatBubbleLeftRight /> Study context: {activeMaterialTitle || 'your notes'}
         </motion.div>
       )}
 
@@ -126,6 +197,13 @@ export default function TutorChat() {
                 </div>
               )}
               <div className="chat-bubble">
+                {msg.image && (
+                  <img
+                    src={msg.image}
+                    alt="attachment"
+                    style={{ maxWidth: '220px', borderRadius: '10px', display: 'block', marginBottom: msg.content ? '0.5rem' : 0 }}
+                  />
+                )}
                 {msg.content.split('\n').map((line, j) => (
                   <span key={j}>
                     {line}
@@ -171,22 +249,74 @@ export default function TutorChat() {
         </motion.div>
       )}
 
+      {/* Pending image preview */}
+      <AnimatePresence>
+        {pendingImage && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.5rem' }}
+          >
+            <div style={{ position: 'relative' }}>
+              <img
+                src={pendingImage.thumb}
+                alt="attachment preview"
+                style={{ height: '56px', borderRadius: '10px', border: '2px solid #E5E7EB', display: 'block' }}
+              />
+              <button
+                onClick={() => setPendingImage(null)}
+                style={{
+                  position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px',
+                  borderRadius: '50%', border: 'none', cursor: 'pointer', background: '#EF4444',
+                  color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem',
+                }}
+                title="Remove image"
+              >
+                <HiOutlineXMark />
+              </button>
+            </div>
+            <span style={{ fontSize: '0.78rem', color: '#6B7280', fontWeight: 600 }}>Image attached — will be sent with your next message</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input */}
       <motion.div className="chat-input-container" initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            attachFile(e.target.files?.[0]);
+            e.target.value = '';
+          }}
+        />
+        <button
+          className="btn btn-secondary"
+          style={{ width: '48px', height: '48px', borderRadius: '50%', padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loading}
+          title="Attach an image (or paste it with Ctrl+V)"
+        >
+          <HiOutlinePaperClip style={{ fontSize: '1.15rem' }} />
+        </button>
         <input
           className="chat-input"
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask a question..."
+          onPaste={handlePaste}
+          placeholder="Ask a question... (paste images with Ctrl+V)"
           disabled={loading}
         />
         <button
           className="btn btn-primary"
           style={{ width: '48px', height: '48px', borderRadius: '50%', padding: 0, flexShrink: 0 }}
           onClick={() => handleSend()}
-          disabled={!input.trim() || loading}
+          disabled={(!input.trim() && !pendingImage) || loading}
         >
           <HiOutlinePaperAirplane style={{ fontSize: '1.25rem', transform: 'rotate(-45deg)', marginLeft: '3px', marginBottom: '3px' }} />
         </button>

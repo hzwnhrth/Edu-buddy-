@@ -27,18 +27,18 @@ function getGreeting() {
  * into the main features of the app (Notes, Quizzes, Chat).
  */
 export default function Dashboard() {
-  const { stats, notesHistory, quizHistory } = useAppContext();
+  const { stats, approvedNotes, quizHistory } = useAppContext();
   const greeting = getGreeting();
 
   const statCards = [
-    { icon: <HiOutlineBookOpen />, label: 'Notes Generated', value: stats.notesGenerated, color: 'blue' },
+    { icon: <HiOutlineBookOpen />, label: 'Study Materials', value: approvedNotes.length, color: 'blue' },
     { icon: <HiOutlineLightBulb />, label: 'Quizzes Taken', value: stats.quizzesTaken, color: 'purple' },
     { icon: <HiOutlineQuestionMarkCircle />, label: 'Questions Asked', value: stats.questionsAsked, color: 'orange' },
     { icon: <HiOutlineTrophy />, label: 'Avg. Score', value: `${stats.averageScore}%`, color: 'green' },
   ];
 
   const quickActions = [
-    { to: '/notes', icon: <HiOutlineDocumentText />, title: 'Generate Notes', desc: 'Upload a PDF to start', color: '#3B82F6', bg: '#DBEAFE' },
+    { to: '/notes', icon: <HiOutlineDocumentText />, title: 'Study Materials', desc: 'Teacher-approved notes', color: '#3B82F6', bg: '#DBEAFE' },
     { to: '/quiz', icon: <HiOutlineLightBulb />, title: 'Start a Quiz', desc: 'Test your knowledge', color: '#8B5CF6', bg: '#EDE9FE' },
     { to: '/chat', icon: <HiOutlineChatBubbleLeftRight />, title: 'Ask AI Tutor', desc: 'Get explanations', color: '#F97316', bg: '#FFF7ED' },
     { to: '/progress', icon: <HiOutlineChartBar />, title: 'View Progress', desc: 'Track your scores', color: '#22C55E', bg: '#DCFCE7' },
@@ -111,15 +111,15 @@ export default function Dashboard() {
         <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#111827' }}>Recent Activity</h2>
       </motion.div>
       <motion.div className="card" variants={itemVariants}>
-        {quizHistory.length === 0 && notesHistory.length === 0 ? (
+        {quizHistory.length === 0 && approvedNotes.length === 0 ? (
           <div className="empty-state">
             <div style={{ fontSize: '3rem', marginBottom: '1rem', color: '#9CA3AF' }}>
               <HiOutlineBookOpen />
             </div>
             <h3>No activity yet</h3>
-            <p style={{ marginBottom: '1.25rem' }}>Upload your first PDF to get started with intelligent studying.</p>
-            <Link to="/notes" className="btn btn-primary" style={{ borderRadius: '9999px' }}>
-              <HiOutlineDocumentText /> Upload Notes
+            <p style={{ marginBottom: '1.25rem' }}>Check your study materials or take a quiz to get started.</p>
+            <Link to="/quiz" className="btn btn-primary" style={{ borderRadius: '9999px' }}>
+              <HiOutlineLightBulb /> Take a Quiz
             </Link>
           </div>
         ) : (
@@ -131,11 +131,11 @@ export default function Dashboard() {
               time: q.timestamp,
               icon: <HiOutlineLightBulb />,
               color: q.percentage >= 70 ? '#22C55E' : q.percentage >= 50 ? '#F59E0B' : '#EF4444',
-            })), ...notesHistory.slice(0, 3).map(n => ({
+            })), ...approvedNotes.slice(0, 3).map(n => ({
               type: 'notes',
               title: `Notes: ${n.notes?.title || 'Study Notes'}`,
-              detail: `${n.flashcards?.length || 0} flashcards generated`,
-              time: n.timestamp,
+              detail: `${n.flashcards?.length || 0} flashcards • Teacher approved`,
+              time: n.approvedAt,
               icon: <HiOutlineDocumentText />,
               color: '#3B82F6',
             }))].sort((a, b) => b.time - a.time).slice(0, 5).map((item, i) => (

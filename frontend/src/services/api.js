@@ -1,121 +1,137 @@
-const API_BASE = 'http://localhost:3000/api'; // Changed to Next.js default port
+const API_BASE = '/api';
+
+/**
+ * getProfileId
+ * The backend identifies every browser by an anonymous profile id, read from
+ * localStorage and created on first use. It is sent as the x-profile-id
+ * header on every request (this is EduBuddy's only notion of identity).
+ */
+export function getProfileId() {
+  let id = localStorage.getItem('edubuddy.profileId');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('edubuddy.profileId', id);
+  }
+  return id;
+}
+
+async function apiFetch(path, { method = 'GET', body } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-profile-id': getProfileId(),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error((data && data.error) || res.statusText || 'Request failed');
+  }
+  return data;
+}
+
+/**
+ * analyzeText
+ * Turns pasted text into a stored material (server keeps the text as chunks).
+ */
+export function analyzeText(title, text) {
+  return apiFetch('/analyze', { method: 'POST', body: { title, text } });
+}
 
 /**
  * generateNotes
- * Sends a PDF file or text string to the backend to generate study topics/notes.
- * Converts the PDF to base64 before sending.
+ * Two-step teacher flow: upload/paste -> /analyze-pdf or /analyze creates a
+ * material, then /api/notes generates the study notes (sections, summary,
+ * key points) and flashcards for that material.
+ * Returns { material, notes, flashcards }.
  */
-export async function generateNotes(file, text, style = 'detailed') {
-  // If a file (PDF) is provided, we need to convert it to base64 and call analyze-pdf
+export async function generateNotes(file, text) {
+  let material;
+
   if (file) {
     const base64 = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = () => {
-        // Strip the data URL prefix (e.g., "data:application/pdf;base64,")
-        const b64 = reader.result.split(',')[1];
-        resolve(b64);
-      };
+      reader.onload = () => resolve(reader.result.split(',')[1]);
       reader.onerror = error => reject(error);
     });
 
-    const res = await fetch(`${API_BASE}/analyze-pdf`, {
+    const data = await apiFetch('/analyze-pdf', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body: {
         title: file.name,
         pdfBase64: base64,
-      }),
+        sourceName: file.name,
+      },
     });
-    
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Failed to analyze PDF');
-    }
-    return res.json();
-  } 
-  
-  // If only text is provided, call analyze
-  if (text) {
-    const res = await fetch(`${API_BASE}/analyze`, {
+    material = data.material;
+  } else if (text) {
+    const data = await apiFetch('/analyze', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: 'Pasted Text',
-        text: text,
-      }),
+      body: { title: 'Pasted Text', text },
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Failed to analyze text');
-    }
-    return res.json();
+    material = data.material;
+  } else {
+    throw new Error('Must provide either file or text');
   }
-  
-  throw new Error('Must provide either file or text');
+
+  const notesData = await apiFetch('/notes', {
+    method: 'POST',
+    body: { materialId: material.id },
+  });
+
+  return {
+    material,
+    notes: notesData.notes,
+    flashcards: notesData.flashcards || [],
+  };
 }
 
 /**
  * generateQuiz
- * Requests a new quiz from the backend based on a specific material ID.
- * Allows setting difficulty (easy, medium, hard) and the number of questions.
+ * Builds a quiz for a stored material. Answers with { quiz } where quiz
+ * carries questions with qid, stem, options, correctAnswerIndex, explanation.
  */
-export async function generateQuiz(materialId, difficulty = 'medium', numQuestions = 5) {
-  // Updated to match the backend quiz endpoint which expects a materialId
-  const res = await fetch(`${API_BASE}/quiz`, {
+export function generateQuiz(materialId, difficulty = 'medium', count = 5) {
+  return apiFetch('/quiz', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      materialId: materialId,
-      difficulty: difficulty,
-      count: numQuestions,
-    }),
+    body: { materialId, difficulty, count },
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || 'Failed to generate quiz');
-  }
-  return res.json();
 }
 
 /**
  * gradeQuiz
- * Submits the student's selected answers for a specific quiz ID to the backend
- * to be graded and saved into the database.
+ * Submits the finished answers for authoritative server-side grading.
+ * answers: [{ qid, chosenIndex }]. Answers with { attempt, results, topicResults }.
  */
-export async function gradeQuiz(quizId, answers) {
-  // Updated to match backend attempt endpoint
-  const res = await fetch(`${API_BASE}/attempt`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ quizId, answers }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || 'Failed to grade quiz');
-  }
-  return res.json();
+export function gradeQuiz(quizId, answers) {
+  return apiFetch('/attempt', { method: 'POST', body: { quizId, answers } });
 }
 
 /**
  * chatWithTutor
- * Sends a message to the AI Tutor. (Currently a placeholder for future backend implementation).
- * Allows passing previous chat history and study context for better AI responses.
+ * One AI tutor reply. materialId (optional) gives the tutor the material's
+ * text as context; history is the caller's last 10 messages; image
+ * (optional, { base64, mimeType }) attaches one picture to the message.
  */
-export async function chatWithTutor(message, context = null, history = []) {
-  // This endpoint doesn't exist on the backend yet, but we'll point it to where it should be
-  const res = await fetch(`${API_BASE}/chat`, {
+export function chatWithTutor(message, materialId = undefined, history = [], image = null) {
+  return apiFetch('/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, context, history }),
+    body: {
+      message,
+      materialId,
+      history,
+      ...(image ? { imageBase64: image.base64, imageMimeType: image.mimeType } : {}),
+    },
   });
+}
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || 'Chat failed');
-  }
-  return res.json();
+/**
+ * getStatus
+ * Health check: which AI and store backends are live.
+ */
+export function getStatus() {
+  return apiFetch('/status');
 }

@@ -3,7 +3,7 @@ import { HiOutlineHome, HiOutlineDocumentText, HiOutlineLightBulb, HiOutlineChat
 
 const navItems = [
   { to: '/dashboard', icon: HiOutlineHome, label: 'Dashboard' },
-  { to: '/notes', icon: HiOutlineDocumentText, label: 'Notes Generator' },
+  { to: '/notes', icon: HiOutlineDocumentText, label: 'Study Materials' },
   { to: '/quiz', icon: HiOutlineLightBulb, label: 'Quiz Arena' },
   { to: '/chat', icon: HiOutlineChatBubbleLeftRight, label: 'AI Tutor' },
   { to: '/progress', icon: HiOutlineChartBar, label: 'Progress' },
@@ -12,7 +12,7 @@ const navItems = [
 /**
  * Sidebar Component
  * Renders the side navigation menu. Contains links to all the main features
- * (Dashboard, Notes Generator, etc.) and the Demo Views switcher at the bottom.
+ * (Dashboard, Study Materials, etc.) and the Demo Views switcher at the bottom.
  */
 export default function Sidebar() {
   return (

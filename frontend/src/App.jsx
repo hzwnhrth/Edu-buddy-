@@ -3,8 +3,9 @@ import { AppProvider } from './context/AppContext';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import Landing from './pages/Landing';
+import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
-import NotesGenerator from './pages/NotesGenerator';
+import StudyMaterials from './pages/StudyMaterials';
 import QuizArena from './pages/QuizArena';
 import TutorChat from './pages/TutorChat';
 import Progress from './pages/Progress';
@@ -21,9 +22,10 @@ import './App.css';
 function AppLayout() {
   const location = useLocation();
   const isLanding = location.pathname === '/';
+  const isAuth = location.pathname === '/login' || location.pathname === '/signup';
 
-  if (isLanding) {
-    return <Landing />;
+  if (isLanding || isAuth) {
+    return location.pathname === '/' ? <Landing /> : <Auth />;
   }
 
   return (
@@ -33,7 +35,7 @@ function AppLayout() {
       <main className="main-content">
         <Routes>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/notes" element={<NotesGenerator />} />
+          <Route path="/notes" element={<StudyMaterials />} />
           <Route path="/quiz" element={<QuizArena />} />
           <Route path="/chat" element={<TutorChat />} />
           <Route path="/progress" element={<Progress />} />

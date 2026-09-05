@@ -100,23 +100,23 @@ export default function Landing() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.5, type: 'spring', stiffness: 80 }}
           >
-            <motion.button 
-              whileHover={{ scale: 1.04 }} 
-              whileTap={{ scale: 0.97 }} 
-              className="btn btn-primary" 
-              style={{ padding: '0.85rem 2rem', fontSize: '1rem', borderRadius: '9999px' }} 
-              onClick={() => navigate('/dashboard')}
+            <motion.button
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.97 }}
+              className="btn btn-primary"
+              style={{ padding: '0.85rem 2rem', fontSize: '1rem', borderRadius: '9999px' }}
+              onClick={() => navigate('/login')}
             >
               <HiOutlineBookOpen /> Get Started Free
             </motion.button>
-            <motion.button 
-              whileHover={{ scale: 1.04 }} 
-              whileTap={{ scale: 0.97 }} 
-              className="btn btn-secondary" 
-              style={{ padding: '0.85rem 2rem', fontSize: '1rem', borderRadius: '9999px' }} 
-              onClick={() => navigate('/notes')}
+            <motion.button
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.97 }}
+              className="btn btn-secondary"
+              style={{ padding: '0.85rem 2rem', fontSize: '1rem', borderRadius: '9999px' }}
+              onClick={() => navigate('/dashboard')}
             >
-              Upload Notes
+              Browse Study Materials
             </motion.button>
           </motion.div>
         </div>

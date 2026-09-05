@@ -1,21 +1,21 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
-import { generateQuiz, gradeQuiz } from '../services/api';
-import { HiOutlineLightBulb, HiOutlineArrowRight, HiOutlineArrowPath, HiOutlineCheckCircle, HiOutlineXCircle, HiOutlineCheck } from 'react-icons/hi2';
+import { generateQuiz, gradeQuiz, analyzeText } from '../services/api';
+import { HiOutlineLightBulb, HiOutlineCheck, HiOutlineArrowRight, HiOutlineArrowPath, HiOutlineCheckCircle, HiOutlineXCircle, HiOutlineDocumentCheck } from 'react-icons/hi2';
 
 /**
  * QuizArena Component
- * Handles the generation, rendering, and grading of quizzes. 
- * Allows students to select difficulty and number of questions. It tracks their 
- * answers in real-time, grades them via the API, and displays a results screen.
+ * Generates an AI quiz from the active study material (set by Study
+ * Materials) or from pasted text, runs one-question-at-a-time with instant
+ * feedback, then submits every answer to the backend for authoritative
+ * grading and topic-level results.
  */
 export default function QuizArena() {
-  const { studyContent, addQuizResult } = useAppContext();
+  const { activeMaterialId, activeMaterialTitle, approvedNotes, setActiveMaterial, addQuizResult } = useAppContext();
+  const [quiz, setQuiz] = useState(null);
   const [difficulty, setDifficulty] = useState('medium');
   const [numQuestions, setNumQuestions] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [quiz, setQuiz] = useState(null);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState([]);
   const [selectedOption, setSelectedOption] = useState(null);
@@ -23,25 +23,57 @@ export default function QuizArena() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [error, setError] = useState('');
   const [textInput, setTextInput] = useState('');
-
-  const contentToUse = studyContent || textInput;
+  const [loading, setLoading] = useState(false);
 
   const handleStart = async () => {
-    if (!contentToUse.trim()) {
-      setError('Please upload notes first (from the Notes Generator page) or paste content below.');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
-      const data = await generateQuiz(contentToUse, difficulty, numQuestions);
-      setQuiz(data);
+      let materialId = activeMaterialId;
+      let title = activeMaterialTitle || 'Study Material';
+
+      if (!materialId) {
+        if (!textInput.trim()) {
+          setError('Please open a study material first (from the Study Materials page) or paste content below.');
+          setLoading(false);
+          return;
+        }
+        const data = await analyzeText('Pasted Text', textInput);
+        materialId = data.material.id;
+        title = 'Pasted Text';
+      }
+
+      let data;
+      try {
+        data = await generateQuiz(materialId, difficulty, numQuestions);
+      } catch (quizErr) {
+        // The backend's memory store resets on restart, so a material id
+        // saved in this browser can go stale. Re-register the approved
+        // notes as a fresh material and retry once.
+        const approved = approvedNotes.find(a => a.material?.id === materialId);
+        if (!approved || !/not found/i.test(quizErr.message)) {
+          throw quizErr;
+        }
+        const sections = (approved.notes?.sections || []).map(s => `${s.heading}\n${s.content}`).join('\n\n');
+        const extras = [approved.notes?.summary, ...(approved.notes?.keyPoints || [])].filter(Boolean).join('\n');
+        const text = [sections, extras].filter(Boolean).join('\n\n');
+        const reanalyzed = await analyzeText(approved.material?.title || 'Study Material', text);
+        setActiveMaterial(reanalyzed.material.id, reanalyzed.material.title);
+        materialId = reanalyzed.material.id;
+        title = reanalyzed.material.title;
+        data = await generateQuiz(materialId, difficulty, numQuestions);
+      }
+
+      setQuiz({ ...data.quiz, _title: title, _difficulty: difficulty });
       setCurrentQ(0);
       setAnswers([]);
       setSelectedOption(null);
       setResults(null);
+      setShowExplanation(false);
     } catch (err) {
-      setError(err.message);
+      setError(/not found/i.test(err.message)
+        ? 'This material is no longer on the server (it restarted). Ask your teacher to re-publish it, or paste the notes below.'
+        : err.message);
     } finally {
       setLoading(false);
     }
@@ -55,7 +87,8 @@ export default function QuizArena() {
   const handleNext = async () => {
     if (selectedOption === null) return;
 
-    const newAnswers = [...answers, selectedOption];
+    const newAnswers = [...answers];
+    newAnswers[currentQ] = selectedOption;
     setAnswers(newAnswers);
 
     if (currentQ < quiz.questions.length - 1) {
@@ -65,9 +98,37 @@ export default function QuizArena() {
     } else {
       setLoading(true);
       try {
-        const gradeResult = await gradeQuiz(quiz.questions, newAnswers);
-        setResults(gradeResult);
-        addQuizResult(gradeResult);
+        const payload = quiz.questions.map((q, i) => ({
+          qid: q.qid,
+          chosenIndex: newAnswers[i],
+        }));
+        const graded = await gradeQuiz(quiz.id, payload);
+
+        const correctCount = graded.results.filter(r => r.correct).length;
+        const total = quiz.questions.length;
+        const percentage = Math.round((graded.attempt.score || 0) * 100);
+        const weakTopics = (graded.topicResults || []).filter(t => t.weak).map(t => t.name);
+
+        const attemptResult = {
+          ...graded,
+          percentage,
+          score: correctCount,
+          total,
+          feedback: weakTopics.length > 0
+            ? `Focus next on: ${weakTopics.join(', ')}.`
+            : 'Strong work across every topic in this quiz.',
+        };
+
+        setResults(attemptResult);
+        addQuizResult({
+          topic: quiz._title,
+          difficulty: quiz._difficulty,
+          score: correctCount,
+          total,
+          percentage,
+          timestamp: Date.now(),
+        });
+        setQuiz(null);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -105,7 +166,13 @@ export default function QuizArena() {
         </div>
 
         <div style={{ maxWidth: '550px', margin: '0 auto' }}>
-          {!studyContent && (
+          {activeMaterialId ? (
+            <motion.div className="card" style={{ marginBottom: '1.5rem', padding: '0.85rem 1.25rem', border: '1px solid rgba(34,197,94,0.3)', background: '#DCFCE7' }} initial={{ y: 16 }} animate={{ y: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#16A34A', fontSize: '0.85rem', fontWeight: 700 }}>
+                <HiOutlineDocumentCheck /> Quiz source: {activeMaterialTitle || 'Study material'} (teacher approved)
+              </div>
+            </motion.div>
+          ) : (
             <motion.div className="card" style={{ marginBottom: '1.25rem', padding: '1.5rem' }} initial={{ y: 16 }} animate={{ y: 0 }}>
               <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.6rem', color: '#111827' }}>Paste your study content</h3>
               <textarea
@@ -116,16 +183,8 @@ export default function QuizArena() {
                 style={{ minHeight: '110px' }}
               />
               <p style={{ fontSize: '0.8rem', color: '#9CA3AF', marginTop: '0.6rem' }}>
-                Tip: Generate notes first from the Notes Generator page — they'll be automatically used here.
+                Tip: Open a material from the Study Materials page — it will be automatically used here.
               </p>
-            </motion.div>
-          )}
-
-          {studyContent && (
-            <motion.div className="card" style={{ marginBottom: '1.5rem', padding: '0.85rem 1.25rem', border: '1px solid rgba(34,197,94,0.3)', background: '#DCFCE7' }} initial={{ y: 16 }} animate={{ y: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#16A34A', fontSize: '0.85rem', fontWeight: 700 }}>
-                ✅ Study content loaded from Notes Generator
-              </div>
             </motion.div>
           )}
 
@@ -186,7 +245,7 @@ export default function QuizArena() {
                 className="btn btn-primary"
                 style={{ padding: '0.85rem 2.5rem', fontSize: '1rem', borderRadius: '9999px', width: '100%' }}
                 onClick={handleStart}
-                disabled={!contentToUse.trim()}
+                disabled={!activeMaterialId && !textInput.trim()}
               >
                 <HiOutlineLightBulb /> Start Quiz
               </button>
@@ -223,7 +282,7 @@ export default function QuizArena() {
       <motion.div className="page-container" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <div style={{ maxWidth: '750px', margin: '0 auto' }}>
           <div className="card" style={{ textAlign: 'center', padding: '2.5rem', marginBottom: '1.5rem' }}>
-            <motion.div 
+            <motion.div
               className="score-circle"
               initial={{ scale: 0, rotate: -180 }}
               animate={{ scale: 1, rotate: 0 }}
@@ -232,11 +291,28 @@ export default function QuizArena() {
               <div className="score-value">{results.percentage}%</div>
               <div className="score-label">{results.score}/{results.total}</div>
             </motion.div>
-            
+
             <h2 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.5rem', color: '#111827' }}>
               {getResultText(results.percentage)}
             </h2>
             <p style={{ color: '#6B7280', fontSize: '0.95rem' }}>{results.feedback}</p>
+
+            {results.topicResults?.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', marginTop: '1.25rem' }}>
+                {results.topicResults.map((t, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      padding: '0.35rem 0.85rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: 700,
+                      background: t.weak ? '#FEE2E2' : '#DCFCE7',
+                      color: t.weak ? '#DC2626' : '#16A34A',
+                    }}
+                  >
+                    {t.name} — {t.correct}/{t.total}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '1.5rem' }}>
               <button className="btn btn-primary" onClick={resetQuiz} style={{ borderRadius: '9999px' }}>
@@ -250,18 +326,18 @@ export default function QuizArena() {
             {results.results.map((r, i) => (
               <motion.div key={i} className="card" style={{ padding: '1.25rem' }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
-                  <span style={{ fontSize: '1.35rem', marginTop: '-0.15rem', color: r.is_correct ? '#22C55E' : '#EF4444' }}>
-                    {r.is_correct ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}
+                  <span style={{ fontSize: '1.35rem', marginTop: '-0.15rem', color: r.correct ? '#22C55E' : '#EF4444' }}>
+                    {r.correct ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}
                   </span>
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.6rem', color: '#111827' }}>{r.question}</p>
-                    {!r.is_correct && (
+                    <p style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.6rem', color: '#111827' }}>{r.stem}</p>
+                    {!r.correct && (
                       <div style={{ padding: '0.6rem 0.85rem', background: '#FEE2E2', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', marginBottom: '0.4rem', color: '#6B7280', fontSize: '0.85rem' }}>
-                        <strong style={{ color: '#EF4444' }}>Your answer:</strong> {r.selected_option}
+                        <strong style={{ color: '#EF4444' }}>Your answer:</strong> {r.options?.[r.chosenIndex]}
                       </div>
                     )}
                     <div style={{ padding: '0.6rem 0.85rem', background: '#DCFCE7', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', marginBottom: '0.75rem', color: '#6B7280', fontSize: '0.85rem' }}>
-                      <strong style={{ color: '#16A34A' }}>Correct:</strong> {r.correct_option}
+                      <strong style={{ color: '#16A34A' }}>Correct:</strong> {r.options?.[r.answerIndex]}
                     </div>
                     {r.explanation && (
                       <div style={{ fontSize: '0.85rem', color: '#6B7280', lineHeight: 1.6 }}>
@@ -288,7 +364,7 @@ export default function QuizArena() {
         {/* Progress Bar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.75rem' }}>
           <div style={{ flex: 1, height: '8px', background: '#E5E7EB', borderRadius: '9999px', overflow: 'hidden' }}>
-            <motion.div 
+            <motion.div
               style={{ height: '100%', background: 'linear-gradient(90deg, #22C55E, #3B82F6)', borderRadius: '9999px' }}
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
@@ -301,7 +377,7 @@ export default function QuizArena() {
         </div>
 
         <AnimatePresence mode="wait">
-          <motion.div 
+          <motion.div
             key={currentQ}
             className="card"
             style={{ padding: '2.5rem' }}
@@ -311,16 +387,15 @@ export default function QuizArena() {
             transition={{ duration: 0.25 }}
           >
             <h2 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1.75rem', lineHeight: 1.5, color: '#111827' }}>
-              {question.question}
+              {question.stem}
             </h2>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {question.options.map((option, i) => {
                 let className = 'quiz-option';
-                let style = {};
-                
+
                 if (showExplanation) {
-                  if (i === question.correct_answer) {
+                  if (i === question.correctAnswerIndex) {
                     className += ' correct';
                   } else if (i === selectedOption) {
                     className += ' incorrect';
@@ -330,12 +405,11 @@ export default function QuizArena() {
                 }
 
                 return (
-                  <motion.button 
+                  <motion.button
                     whileHover={!showExplanation ? { scale: 1.01 } : {}}
                     whileTap={!showExplanation ? { scale: 0.99 } : {}}
-                    key={i} 
-                    className={className} 
-                    style={style}
+                    key={i}
+                    className={className}
                     onClick={() => handleSelectOption(i)}
                   >
                     <span className="quiz-option-letter">
@@ -349,13 +423,13 @@ export default function QuizArena() {
 
             <AnimatePresence>
               {showExplanation && question.explanation && (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   style={{ marginTop: '1.5rem', padding: '1rem', background: '#F0FDF4', borderRadius: '10px', border: '1px solid rgba(34,197,94,0.2)' }}
                 >
                   <p style={{ color: '#6B7280', fontSize: '0.9rem', lineHeight: 1.6 }}>
-                    <span style={{ color: '#16A34A', fontWeight: 700, marginRight: '0.4rem' }}>Explanation:</span> 
+                    <span style={{ color: '#16A34A', fontWeight: 700, marginRight: '0.4rem' }}>Explanation:</span>
                     {question.explanation}
                   </p>
                 </motion.div>
