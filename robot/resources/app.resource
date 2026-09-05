@@ -195,6 +195,17 @@ Wait For Quiz Results
     ...    circle element is what this waits for.
     Wait For Elements State    css=.score-value    visible    timeout=20s
 
+Get Local Storage Item
+    [Documentation]    Returns the value the current page stores in
+    ...    localStorage under ``key`` (None when the key is not set).
+    ...    Thin wrapper over the Browser library's "LocalStorage Get Item"
+    ...    keyword (verified against the installed Browser 20.1.0 libdoc:
+    ...    it takes the key and returns the stored string), so suites can
+    ...    read the app's own localStorage keys by their plain name.
+    [Arguments]    ${key}
+    ${value} =    LocalStorage Get Item    ${key}
+    RETURN    ${value}
+
 Seed Graded Quiz Attempt
     [Documentation]    Creates one graded 10-question attempt on the
     ...    context's active material through the API: POST /api/quiz (the

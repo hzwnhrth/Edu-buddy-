@@ -1,28 +1,37 @@
 *** Settings ***
-Documentation     The Quiz Arena end to end on the bundled topic deck: the
-...               start screen's deck picker (no paste box, no difficulty
-...               buttons any more), a full 10 question quiz always choosing
-...               the first option with "Check Answer" then "Next" per
-...               question, and the local results view: a percentage in the
-...               score circle, ten Detailed Results cards, the spaced-
-...               repetition "Next review" line, and the deck's single topic
-...               card. Questions and options are scrambled every round, so
-...               assertions are on shapes, never on an exact score. All
-...               tests share one browser context and run in the written
-...               order.
+Documentation     The Quiz Arena end to end on the bundled decks: the start
+...               screen's deck picker listing all four of them (no paste
+...               box, no difficulty buttons any more), a full 10 question
+...               quiz on the default first deck always choosing the first
+...               option with "Check Answer" then "Next" per question, and
+...               the local results view: a percentage in the score circle,
+...               ten Detailed Results cards, the spaced-repetition "Next
+...               review" line, and the deck's single topic card. Questions
+...               and options are scrambled every round, so assertions are
+...               on shapes, never on an exact score. All tests share one
+...               browser context and run in the written order.
 Resource          ../resources/app.resource
 Suite Setup       Open App
 Suite Teardown    Close Browser
 
 *** Test Cases ***
-Quiz Start Screen Lists The Topic Deck
-    [Documentation]    The Quiz Arena start screen offers the bundled
-    ...    Sejarah deck, keeps the question count select, and no longer
-    ...    shows the paste-content card or the difficulty buttons, then
-    ...    starts a 10 question quiz on demand.
+Quiz Start Screen Lists The Topic Decks
+    [Documentation]    The Quiz Arena start screen offers the four bundled
+    ...    decks (Bab 1, Bab 2, Bab 3 and the mix of all chapters), keeps
+    ...    the question count select, and no longer shows the paste-content
+    ...    card or the difficulty buttons, then starts a 10 question quiz
+    ...    on demand.
     Go To    ${BASE_URL}/quiz
     Wait For Elements State    text="Select a topic deck"    visible    timeout=20s
-    Wait For Elements State    text=Sejarah T4    visible    timeout=15s
+    ${deck_buttons} =    Get Element Count    css=button:has-text("due for review")
+    Should Be Equal As Integers    ${deck_buttons}    4
+    ...    msg=Expected four deck buttons on the start screen, got ${deck_buttons}.
+    ${bab_one_cards} =    Get Element Count    text="Buku Teks Sejarah T4 - Bab 1"
+    Should Be Equal As Integers    ${bab_one_cards}    1
+    ...    msg=Expected exactly one Bab 1 deck title, got ${bab_one_cards}.
+    Wait For Elements State    text="Buku Teks Sejarah T4 - Bab 2"    visible    timeout=15s
+    Wait For Elements State    text="Buku Teks Sejarah T4 - Bab 3"    visible    timeout=15s
+    Wait For Elements State    text="Semua Bab (Bab 1-3)"    visible    timeout=15s
     ${paste_cards} =    Get Element Count    text=Paste your study content
     Should Be Equal As Integers    ${paste_cards}    0
     ...    msg=The paste-content card should be gone from the Quiz Arena.
