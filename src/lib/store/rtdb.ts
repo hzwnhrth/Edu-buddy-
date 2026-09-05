@@ -108,6 +108,7 @@ function normalizeProfile(id: string, value: StoredObject): Profile {
     id,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : "",
     lastSeenAt: typeof value.lastSeenAt === "string" ? value.lastSeenAt : "",
+    displayName: typeof value.displayName === "string" ? value.displayName : null,
     latestFeedback: nullableString(value.latestFeedback),
     latestFeedbackAt: nullableString(value.latestFeedbackAt),
     aiCallsToday: typeof value.aiCallsToday === "number" ? value.aiCallsToday : 0,
@@ -214,6 +215,7 @@ export class RtdbStore implements Store {
       id,
       createdAt: now,
       lastSeenAt: now,
+      displayName: null,
       latestFeedback: null,
       latestFeedbackAt: null,
       aiCallsToday: 0,
@@ -338,5 +340,10 @@ export class RtdbStore implements Store {
     return Object.values(byTopic ?? {}).map((value) =>
       normalizeTopicProgress((value ?? {}) as StoredObject)
     );
+  }
+
+  async listProfileIds(): Promise<string[]> {
+    const profiles = await readObject("profiles");
+    return Object.keys(profiles ?? {});
   }
 }

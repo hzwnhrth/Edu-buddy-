@@ -110,3 +110,11 @@ Vercel's free tier is enough to run the app, as are the free tiers of OpenRouter
 - Scanned, image-only PDFs are not supported by the current AI, which receives text only. Upload a PDF with selectable text, or paste the notes.
 - Each browser is a separate profile. Progress made in one browser does not appear in another, and clearing a browser's storage starts a new, empty profile.
 - The free model has rate limits. The app absorbs them by retrying on the paid model, so the OpenRouter account should hold a small credit balance for busy moments.
+
+## Team preview frontend and extra APIs
+
+The repository also contains the teammates' preview frontend in the `frontend/` folder. It is a separate Vite React app with its own `package.json`, so it runs independently of the main app, and it includes teacher, admin and sign-in screens that are not part of the main app's no-login flow.
+
+Two additional Next.js API routes came with the same merge: `GET /api/teacher/classroom` and `GET /api/admin/overview`. They aggregate live data from the store and have no mock fallback.
+
+The main EduBuddy app and its flow are unchanged.

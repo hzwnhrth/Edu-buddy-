@@ -133,6 +133,9 @@ export interface Profile {
   id: string;
   createdAt: string;
   lastSeenAt: string;
+  // Optional friendly name shown on the teacher's classroom view. Synced
+  // from the browser's signed-in user via the x-display-name header.
+  displayName?: string | null;
   latestFeedback: string | null;
   latestFeedbackAt: string | null;
   aiCallsToday: number;

@@ -49,8 +49,17 @@ export function withProfile<Params extends RouteParams = RouteParams>(
       checkIpLimit(ip);
 
       const store = getStore();
-      const profile = await store.getOrCreateProfile(profileId);
+      let profile = await store.getOrCreateProfile(profileId);
       const params = context ? await context.params : ({} as Params);
+
+      // Opportunistic name sync: browsers may send the signed-in user's
+      // name on any request; storing it keeps the teacher's classroom view
+      // friendly without a separate update endpoint.
+      const displayName = request.headers.get("x-display-name")?.trim().slice(0, 80) || null;
+      if (displayName && displayName !== profile.displayName) {
+        await store.updateProfile(profileId, { displayName });
+        profile = { ...profile, displayName };
+      }
 
       return await handler({ request, profile, store, params });
     } catch (error) {

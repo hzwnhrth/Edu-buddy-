@@ -33,4 +33,8 @@ export interface Store {
   getTopicProgress(profileId: string, topicId: string): Promise<TopicProgress | null>;
   upsertTopicProgress(profileId: string, progress: TopicProgress): Promise<void>;
   listTopicProgress(profileId: string): Promise<TopicProgress[]>;
+
+  // Every profile id that exists, for the admin overview's school-wide
+  // aggregation. No per-profile ownership check applies to this listing.
+  listProfileIds(): Promise<string[]>;
 }
