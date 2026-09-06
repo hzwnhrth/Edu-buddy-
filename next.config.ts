@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
   // development. This project keeps only the files the team wrote, so the
   // documented switch below turns that generation off.
   agentRules: false,
+  async rewrites() {
+    return [
+      { source: "/app/:path*", destination: "/app/index.html" },
+    ];
+  },
 };
 
 export default nextConfig;
