@@ -1,5 +1,5 @@
-import { NavLink } from 'react-router-dom';
-import { HiOutlineHome, HiOutlineDocumentText, HiOutlineLightBulb, HiOutlineChatBubbleLeftRight, HiOutlineChartBar } from 'react-icons/hi2';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { HiOutlineHome, HiOutlineDocumentText, HiOutlineLightBulb, HiOutlineChatBubbleLeftRight, HiOutlineChartBar, HiOutlineArrowRightOnRectangle } from 'react-icons/hi2';
 import { useAppContext } from '../context/AppContext';
 
 const navItems = [
@@ -16,7 +16,8 @@ const navItems = [
  * (Dashboard, Study Materials, etc.) and the Demo Views switcher at the bottom.
  */
 export default function Sidebar() {
-  const { currentUser } = useAppContext();
+  const navigate = useNavigate();
+  const { currentUser, logout } = useAppContext();
   const isStudent = currentUser?.role === 'student';
   return (
     <aside className="sidebar">
@@ -48,6 +49,15 @@ export default function Sidebar() {
         {currentUser?.role === 'student' && <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ padding: '0.5rem', fontSize: '0.8rem' }}>Student Dashboard</NavLink>}
         {currentUser?.role === 'teacher' && <NavLink to="/teacher-dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ padding: '0.5rem', fontSize: '0.8rem' }}>Teacher Dashboard</NavLink>}
         {currentUser?.role === 'admin' && <NavLink to="/admin-dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ padding: '0.5rem', fontSize: '0.8rem' }}>Admin Dashboard</NavLink>}
+        {currentUser && (
+          <button
+            type="button"
+            onClick={async () => { await logout(); navigate('/login'); }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 0.5rem', border: '1px solid #FECACA', borderRadius: '8px', background: '#FFF7F7', color: '#DC2626', cursor: 'pointer', font: 'inherit', fontSize: '0.8rem', fontWeight: 700, marginTop: '0.5rem' }}
+          >
+            <HiOutlineArrowRightOnRectangle /> Sign out
+          </button>
+        )}
       </div>
     </aside>
   );
