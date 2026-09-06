@@ -48,10 +48,10 @@ export function withProfile<Params extends RouteParams = RouteParams>(
       LimitErrorClass = limits.LimitError;
       const auth = await import("@/lib/auth");
       AuthErrorClass = auth.AuthError;
-      const { getStore } = await import("@/lib/store");
 
       limits.checkIpLimit(ip);
       const identity = await auth.authenticateRequest(request.headers.get("authorization"));
+      const { getStore } = await import("@/lib/store");
       const store = getStore();
       let profile = await store.getOrCreateProfile(identity.uid);
       const params = context ? await context.params : ({} as Params);
