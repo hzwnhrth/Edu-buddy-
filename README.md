@@ -124,3 +124,6 @@ The repository also contains the teammates' preview frontend in the `frontend/` 
 3. Run `npm install` and then `npm run dev` inside `frontend/`.
 
 The server verifies that token with the Firebase Admin SDK, using the same `FIREBASE_SERVICE_ACCOUNT_JSON` documented above. Every API route except `GET /api/status` now requires a valid signed-in user and answers 401 without one, or 503 when `FIREBASE_SERVICE_ACCOUNT_JSON` is not set, so the main app's no-login guest flow no longer reaches the API. `GET /api/teacher/classroom` and `GET /api/admin/overview` additionally require the matching `teacher` or `admin` role custom claim (403 otherwise), aggregate live data from the store, and have no mock fallback. Roles are assigned only through the Admin SDK, with `node scripts/promote-role.mjs <email> <teacher|admin>`, and new signups default to the `student` role.
+
+In the `frontend/` app every screen is role-guarded: a signed-in user who opens a page above their role, for example a student opening `/admin-dashboard`, is bounced to their own role's home (`/dashboard`, `/teacher-dashboard` or `/admin-dashboard`).
+Signed-out visitors who open any screen are sent to `/login`.
