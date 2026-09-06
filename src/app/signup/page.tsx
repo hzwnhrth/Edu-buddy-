@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { AuthForm } from "@/app/login/page";
+import { AuthForm, homeForUser } from "@/app/login/page";
 import { getFirebaseAuth } from "@/lib/firebase-client";
 
 export default function SignupPage() {
@@ -19,8 +19,8 @@ export default function SignupPage() {
     try {
       const credential = await createUserWithEmailAndPassword(getFirebaseAuth(), email.trim(), password);
       await updateProfile(credential.user, { displayName: name.trim() });
-      router.replace("/dashboard");
+      router.replace(await homeForUser(credential.user));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to create your account."); } finally { setLoading(false); }
   }
-  return <AuthForm title="Create your account" submitLabel="Create account" error={error} loading={loading} onSubmit={onSubmit} name={name} setName={setName} email={email} password={password} setEmail={setEmail} setPassword={setPassword} footer={<><span>Already have an account? </span><Link href="/login">Sign in</Link></>} />;
+  return <AuthForm title="Create your account" subtitle="Join your classroom in one minute" submitLabel="Create Account" error={error} loading={loading} onSubmit={onSubmit} name={name} setName={setName} email={email} password={password} setEmail={setEmail} setPassword={setPassword} footer={<><span>Already have an account? </span><Link href="/login">Log in</Link></>} />;
 }
