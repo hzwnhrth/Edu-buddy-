@@ -86,7 +86,7 @@ function AppLayout() {
 function App() {
   return (
     <AppProvider>
-      <Router basename={import.meta.env.BASE_URL}>
+      <Router>
         <Routes>
           <Route path="/*" element={<AppLayout />} />
         </Routes>

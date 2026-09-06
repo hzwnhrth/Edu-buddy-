@@ -1,8 +1,10 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { HiOutlineBars3, HiOutlineSparkles } from "react-icons/hi2";
+import { usePathname, useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";
+import { HiOutlineArrowRightOnRectangle, HiOutlineBars3, HiOutlineSparkles } from "react-icons/hi2";
 import { RuntimeBadge } from "@/components/RuntimeBadge";
+import { getFirebaseAuth } from "@/lib/firebase-client";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -26,6 +28,7 @@ interface NavbarProps {
  */
 export function Navbar({ onMenuToggle }: NavbarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const title = pageTitles[pathname] ?? "EduBuddy AI";
 
   return (
@@ -46,6 +49,16 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
           <HiOutlineSparkles style={{ color: "#22C55E" }} /> SDG 4: Quality Education
         </span>
         <RuntimeBadge />
+        <button
+          type="button"
+          onClick={async () => {
+            await signOut(getFirebaseAuth());
+            router.replace("/login");
+          }}
+          style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.45rem 0.75rem", border: "1px solid #FECACA", borderRadius: "9999px", background: "#FFF7F7", color: "#DC2626", cursor: "pointer", font: "inherit", fontSize: "0.78rem", fontWeight: 700 }}
+        >
+          <HiOutlineArrowRightOnRectangle /> Sign out
+        </button>
         <div
           style={{
             width: "36px",
