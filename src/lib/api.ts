@@ -65,8 +65,13 @@ export function withProfile<Params extends RouteParams = RouteParams>(
 
       return await handler({ request, profile, identity, store, params });
     } catch (error) {
-      if (AuthErrorClass && error instanceof AuthErrorClass) {
-        return jsonError(error.status, error.message);
+      if (
+        (AuthErrorClass && error instanceof AuthErrorClass) ||
+        (typeof error === "object" && error !== null && "status" in error &&
+          ((error as { status?: unknown }).status === 401 || (error as { status?: unknown }).status === 403 || (error as { status?: unknown }).status === 503))
+      ) {
+        const authError = error as Error & { status: 401 | 403 | 503 };
+        return jsonError(authError.status, authError.message);
       }
       if (LimitErrorClass && error instanceof LimitErrorClass) {
         console.warn(`rate limit reached for ip "${ip}": ${error.message}`);
