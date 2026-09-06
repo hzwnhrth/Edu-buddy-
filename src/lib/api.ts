@@ -81,7 +81,7 @@ export function withProfile<Params extends RouteParams = RouteParams>(
         return jsonError(400, error.message);
       }
       console.error(error);
-      return jsonError(500, error instanceof Error ? error.message : "Something went wrong");
+      return jsonError(500, "Something went wrong");
     }
   };
 }
