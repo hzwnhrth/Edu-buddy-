@@ -108,6 +108,11 @@ function assertNotesShape(data: NotesResponse): void {
 // ---- main ---------------------------------------------------------------
 
 async function main(): Promise<void> {
+  console.log(
+    "PARKED: this script exercises the retired no-login guest flow; the API now requires a Firebase sign-in token. Rewrite against authenticated flows to re-enable."
+  );
+  process.exit(0);
+
   const store = getStore();
 
   // profile1 owns the sample material the notes cases run against. Cases

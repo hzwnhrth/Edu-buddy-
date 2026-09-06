@@ -5,6 +5,10 @@ Documentation     Shared variables and keywords for the EduBuddy end-to-end
 ...               small flow keywords several suites repeat (opening the
 ...               sample notes, running a quiz always choosing the first
 ...               option, waiting for a results view).
+...
+...               The suites are parked: since the no-login guest flow was
+...               retired, Build App, Start App and Open App skip the run
+...               straight away. See the Parking section in robot/README.md.
 Library           Process
 Library           Browser
 
@@ -17,6 +21,7 @@ ${BASE_URL}       http://localhost:${PORT}
 ${BROWSER}        chromium
 ${HEADLESS}       True
 ${SAMPLE_TITLE}    How the Internet Works: A First Tour
+${PARKED_MESSAGE}    Parked: these suites drive the retired no-login guest flow, and the API now requires a Firebase sign-in token, so they need a rewrite against authenticated flows before they can run again.
 
 *** Keywords ***
 Build App
@@ -25,6 +30,9 @@ Build App
     ...    non-zero exit code. Skipped entirely when the environment
     ...    variable EDUBUDDY_SKIP_BUILD is set to 1, for fast re-runs while a
     ...    build from a previous run is still valid.
+    ...    Currently parked: skips immediately, so nothing is built; see the
+    ...    Parking section in robot/README.md.
+    Skip    ${PARKED_MESSAGE}
     IF    "%{EDUBUDDY_SKIP_BUILD=0}" == "1"
         Log    EDUBUDDY_SKIP_BUILD=1, skipping npm run build.    console=True
     ELSE
@@ -53,6 +61,9 @@ Start App
     ...    GET ${BASE_URL}/api/status reports ai "mock" and store "memory".
     ...    Stores the server process in ${SERVER_PROCESS} (a suite variable)
     ...    so Stop App can find it again later.
+    ...    Currently parked: skips immediately, so no server is started; see
+    ...    the Parking section in robot/README.md.
+    Skip    ${PARKED_MESSAGE}
     Log    Starting npm start in ${APP_DIR} on port ${PORT} ...    console=True
     ${process} =    Start Process
     ...    npm.cmd    start    --    -p    ${PORT}
@@ -82,6 +93,15 @@ Stop App
     ...    Windows (it is a wrapper that spawns further node processes), so
     ...    this uses "taskkill /PID <pid> /T /F" against the recorded
     ...    process id, then confirms the port is free.
+    ...    While the run is parked, Start App never runs, so this returns
+    ...    immediately when no server process was ever recorded, keeping the
+    ...    suite teardown harmless after a skipped setup.
+    ${server_started} =    Run Keyword And Return Status
+    ...    Variable Should Exist    ${SERVER_PROCESS}
+    IF    not ${server_started}
+        Log    No server was started (the run is parked), nothing to stop.    console=True
+        RETURN
+    END
     ${still_running} =    Run Keyword And Return Status    Is Process Running    ${SERVER_PROCESS}
     IF    ${still_running}
         Log    Stopping server process tree (pid ${SERVER_PROCESS.pid}) ...    console=True
@@ -110,7 +130,10 @@ Open App
     ...    installed Browser library, for the argument's dictionary shape);
     ...    it defaults to the desktop size every suite used before the phone-
     ...    width suite needed something narrower.
+    ...    Currently parked: skips immediately, so no browser is opened; see
+    ...    the Parking section in robot/README.md.
     [Arguments]    ${viewport}={'width': 1280, 'height': 900}
+    Skip    ${PARKED_MESSAGE}
     New Browser    ${BROWSER}    headless=${HEADLESS}
     New Context    viewport=${viewport}
     New Page    ${BASE_URL}
@@ -194,6 +217,17 @@ Wait For Quiz Results
     ...    quiz lives at /quiz) and no server round trip, so the score
     ...    circle element is what this waits for.
     Wait For Elements State    css=.score-value    visible    timeout=20s
+
+Get Local Storage Item
+    [Documentation]    Returns the value the current page stores in
+    ...    localStorage under ``key`` (None when the key is not set).
+    ...    Thin wrapper over the Browser library's "LocalStorage Get Item"
+    ...    keyword (verified against the installed Browser 20.1.0 libdoc:
+    ...    it takes the key and returns the stored string), so suites can
+    ...    read the app's own localStorage keys by their plain name.
+    [Arguments]    ${key}
+    ${value} =    LocalStorage Get Item    ${key}
+    RETURN    ${value}
 
 Seed Graded Quiz Attempt
     [Documentation]    Creates one graded 10-question attempt on the

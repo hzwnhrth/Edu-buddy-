@@ -67,6 +67,7 @@ export class MemoryStore implements Store {
       id,
       createdAt: now,
       lastSeenAt: now,
+      displayName: null,
       latestFeedback: null,
       latestFeedbackAt: null,
       aiCallsToday: 0,
@@ -172,5 +173,9 @@ export class MemoryStore implements Store {
   async listTopicProgress(profileId: string): Promise<TopicProgress[]> {
     const byTopic = this.tables.topicProgressByProfile.get(profileId);
     return byTopic ? [...byTopic.values()].map((progress) => ({ ...progress })) : [];
+  }
+
+  async listProfileIds(): Promise<string[]> {
+    return [...this.tables.profiles.keys()];
   }
 }

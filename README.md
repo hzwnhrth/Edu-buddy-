@@ -2,45 +2,75 @@
 
 ## What EduBuddy is
 
-EduBuddy is an AI study assistant for university students. A student uploads lecture notes, as a PDF or as pasted text, and gets back the topics found in those notes, a quiz built from them, plain-language explanations for any topic they are weak on, and a short study plan. There is no account and no login. It was built for Hackathon Sedia!, a student hackathon, for United Nations Sustainable Development Goal 4, Quality Education.
+EduBuddy is a study companion for students, built as a hackathon entry for Hackathon Sedia! for United Nations Sustainable Development Goal 4, Quality Education. A student signs in, uploads or pastes lecture notes and the app:
 
-## How it works
+- splits the notes into topics and writes study notes, flashcards and key points from them,
+- builds multiple-choice quizzes where the student picks the difficulty and the number of questions,
+- flags weak topics after a quiz and explains them in plain language,
+- answers questions in an AI tutor chat that reads from the student's notes,
+- tracks mastery per topic on a Progress screen with written feedback and a "Review today" queue,
+- schedules practice with a spaced-repetition scheduler (rate a card again, hard, good or easy and it comes back at the right time),
+- offers a built-in Malaysian history quiz bank, Form 4 Sejarah (Warisan Negara Bangsa), which runs without any AI at all,
+- and includes teacher and admin demo views for showing the product to educators.
 
-Six screens, each with one main action:
+EduBuddy is login-first: every feature needs a Firebase email/password sign-in. The server verifies a Firebase ID token on every API call, and every note, quiz, result and progress entry belongs to the signed-in account, not to a browser. There is no guest mode.
 
-1. Dashboard (`/`): recent notes, overall mastery, and a short queue of what to review today.
-2. Upload (`/upload`): drop a PDF or paste text; the app extracts the topics and moves on by itself.
-3. Topics (`/notes/[id]`): the extracted topics, a mastery bar on each, and one button to start a quiz.
-4. Quiz (`/notes/[id]/quiz`): one question at a time, four options, a progress bar, and a submit at the end.
-5. Results (`/notes/[id]/results`): the score, a bar per topic, and the weak topics flagged.
-6. Study (`/study/[materialId]/[topicId]`): a plain-language explanation of one topic, with its key points.
+The main app's screens: Landing (`/`), Dashboard (`/dashboard`), Notes Generator (`/notes`), Quiz Arena (`/quiz`), AI Tutor (`/chat`), Progress (`/progress`), plus the demo views (`/teacher-dashboard` and `/admin-dashboard`). These screens have no sign-in form yet, so their requests reach the API without a token and surface sign-in-required errors; rework is planned. For a working sign-in flow today, use the teammates' preview frontend in `frontend/` (see the last section).
 
-## What you need
+## Quick start
 
-- Node.js, with npm. Any current long-term-support (LTS) release of Node.js is enough.
-- Python 3, with the `py` launcher on the PATH. This is only needed to run the end-to-end test suite; the app itself does not need Python.
+You need Node.js with npm, and a Firebase project with Email/Password sign-in enabled. Then, from this folder:
 
-## Setup
+```
+npm install
+npm run dev
+```
 
-1. Clone the repository.
-2. Install the dependencies: `npm install`.
-3. Start the development server: `npm run dev`.
-4. Open the local address the terminal prints, in a browser.
+Two things decide whether anything works after that:
 
-That is everything required to see the app work. By default it runs in mock mode, with no secrets configured: AI answers come from a deterministic mock built into the project instead of a real model, and all data is kept in memory for the life of that server process instead of a real database. Whenever a fallback like this is active, the header shows a "Mock AI" badge, a "Memory store" badge, or both, so it is always clear which parts are real. To see the whole flow without typing or uploading anything, use "Try sample notes" on the dashboard.
+- The API needs `FIREBASE_SERVICE_ACCOUNT_JSON` (see Configuration below). Without it, every API route except `GET /api/status` answers 503, because sign-in cannot be verified.
+- The main app's screens do not offer sign-in yet and currently surface sign-in-required errors instead of features. To exercise the product end to end, run the sign-in-capable frontend in `frontend/` (see the last section).
 
-## Secrets
+Whenever a fallback is active, the header shows a "Mock AI" badge, a "Memory store" badge, or both, so mock output is never mistaken for the real thing.
 
-Copy `.env.example` to `.env.local` and fill in what you have.
+## Configuration
 
-- `GEMINI_API_KEY`: a key from Google AI Studio. Leave it empty to keep using the mock AI described above.
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: the Firebase service account JSON for a project, pasted as one line and wrapped in single quotes. Leave it empty to keep using the in-memory store.
-- `GEMINI_MODEL`: optional. A specific Gemini model id. Leave it empty and the app picks a current model for itself.
-- `DAILY_AI_CALL_CAP`: optional. The per-profile daily AI call cap described under Limits below. Defaults to 60 when not set.
+Copy `.env.example` to `.env.local` and fill in what you have. The four variables:
 
-Run `npm run check` at any time; it verifies whichever of these you have set, against the real services, without touching the ones left empty.
+| Variable | Meaning |
+| --- | --- |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Required for the API. The service account JSON of your Firebase project, pasted on one line; every route except `GET /api/status` answers 503 without it. |
+| `FIREBASE_DATABASE_URL` | The Realtime Database URL of the same project, for example `https://your-project-default-rtdb.firebaseio.com/`. Real storage needs this together with the service account. Without them, data is kept in memory and resets on every restart. |
+| `OPENROUTER_API_KEY` | A key from https://openrouter.ai/keys. Empty means mock AI. |
+| `OPENROUTER_MODEL` | Optional. One specific model id, which replaces the default model chain entirely. Empty means the chain described below. |
 
-`.env.local` is never committed: it is listed in `.gitignore`, and only `.env.example`, which holds no real values, is checked in.
+The service account JSON must be flattened to one line and wrapped in single quotes. Recipe: open the downloaded JSON file, join all of it onto a single line, and put single quotes around the whole thing, exactly like this:
+
+```
+FIREBASE_SERVICE_ACCOUNT_JSON='{"project_id":"...","client_email":"...","private_key":"..."}'
+```
+
+If you would rather set the variables for one PowerShell session than create the file:
+
+```
+$env:FIREBASE_SERVICE_ACCOUNT_JSON = '{"project_id":"...","client_email":"...","private_key":"..."}'
+$env:FIREBASE_DATABASE_URL = "https://your-project-default-rtdb.firebaseio.com/"
+$env:OPENROUTER_API_KEY = "your key here"
+npm run dev
+```
+
+Run `npm run check` any time. It verifies whichever secrets you did set against the real OpenRouter and Firebase services and prints one line per check:
+
+- `OK: FIREBASE_SERVICE_ACCOUNT_JSON present (parsed as JSON)`: the JSON has the fields the app needs.
+- `OK: Realtime Database reachable`: a write and read back to a fixed health path in your database worked.
+- `OK: OPENROUTER_API_KEY present`: the key is set.
+- `OK: OpenRouter reachable (model ...)`: a real call to the model answered, and the model in use is named.
+
+Anything you left empty is reported as SKIPPED, not FAIL, and the script only exits with an error when something you did configure does not work.
+
+The AI model chain: with `OPENROUTER_MODEL` empty, every AI job first tries the free `google/gemma-4-31b-it:free`. When that model answers 429 or a quota or credits error, the app automatically retries the same call once with the paid `google/gemma-4-31b-it`. Setting `OPENROUTER_MODEL` replaces this whole chain with that single model id.
+
+`.env.local` holds only local secrets and is never committed; only `.env.example`, which contains no real values, is checked in.
 
 ## Scripts
 
@@ -48,52 +78,52 @@ Run `npm run check` at any time; it verifies whichever of these you have set, ag
 | --- | --- |
 | `npm run dev` | Starts the development server. |
 | `npm run build` | Creates a production build. |
-| `npm run start` | Runs the production build that `build` created. |
+| `npm run start` | Serves the production build. |
 | `npm run lint` | Runs ESLint over the project. |
-| `npm run check` | Verifies whichever of `GEMINI_API_KEY` and `FIREBASE_SERVICE_ACCOUNT_JSON` are set, against the real services, and prints the model in use. |
-| `npm run list-models` | Prints the Gemini model ids the configured key can use. |
-| `npm run smoke:ai` | Runs all five AI jobs, the four text jobs on the sample notes and the scanned-PDF job on a bundled test file, and checks the shape of every answer. |
-| `npm run test:routes` | Runs the three route test scripts in sequence, with no server running. |
-| `npm run test:e2e` | Runs the Robot Framework end-to-end suite, which builds and starts the app itself. |
+| `npm run check` | Verifies the secrets you set against the real services and prints the model in use. |
+| `npm run list-models` | Prints the Gemma models OpenRouter lists publicly and the model chain the app would use. |
+| `npm run smoke:ai` | Runs every AI job on the bundled sample notes, plus the scanned-PDF job on `robot/data/test.pdf`, and validates the shape of every answer, in whichever mode the environment gives. |
+| `npm run test:srs` | Tests the spaced-repetition scheduler and session builder as pure logic, with no server and no secrets. Still runs. |
+| `npm run test:routes` | Parked. The five route scripts exercised the retired no-login guest flow; each now prints a PARKED notice and exits 0. |
+| `npm run test:e2e` | Parked. The eight Robot suites under `robot/` drove the app as a guest; they now report skipped, each with a reason. |
 
-## Tests
+The route scripts and browser suites are parked, not deleted, because sign-in became mandatory and they only exercised the retired no-login guest flow. A rewrite against authenticated flows is planned. `npm run test:srs` is unaffected and still runs. The Robot tooling setup is unchanged for that rewrite: Python 3 with the `py` launcher on the PATH, plus the pinned packages from `robot/requirements.txt` installed once per machine:
 
-Two kinds of automated test exist.
+```
+py -m pip install -r robot/requirements.txt
+py -m Browser.entry init
+```
 
-`npm run test:routes` runs three scripts, `scripts/test-ingest.ts`, `scripts/test-quiz.ts` and `scripts/test-insight.ts`, that call the API route handlers directly, in plain Node.js, with no server running.
+Robot results land in `robot/results`; see `robot/README.md` for details.
 
-`npm run test:e2e` runs the Robot Framework suite under `robot/`. It builds and starts the app itself, on port 3105, in forced mock mode, so it needs no secrets and gives the same result every time. See `robot/README.md` for the install steps this needs first.
+## Deploying
 
-## Project layout
+1. Push the repository to the team branch, `development_umar`.
+2. Import the project in Vercel from that branch.
+3. Add the environment variables from the table above in the Vercel project settings; `FIREBASE_SERVICE_ACCOUNT_JSON` is required, the others are optional.
+4. Deploy, done.
 
-The top-level folders:
+The `frontend/` app deploys separately as its own Vercel project and needs the four `VITE_FIREBASE_*` variables described below.
 
-- `docs/`: the project specification, `spec.md`, the contract this README follows.
-- `public/`: static files served as-is; currently the standard font metrics `pdfjs-dist` needs so it can read PDFs that do not embed their own fonts.
-- `robot/`: the end-to-end test suite. See `robot/README.md`.
-- `scripts/`: small command-line programs: the AI checks described above, and the route tests.
-- `src/`: the application itself.
+Vercel's free tier is enough to run the app, as are the free tiers of OpenRouter and Firebase for a demo.
 
-The main subfolders of `src/`:
+## Known limitations
 
-- `src/app/`: pages and routes, using the Next.js App Router. `src/app/api/` holds the backend routes; `src/app/dev/preview` is a development-only preview page.
-- `src/components/`: shared UI building blocks in `ui/`, and the components for each screen (`dashboard/`, `notes/`, `quiz/`, `results/`, `status/`, `study/`, `upload/`).
-- `src/content/`: the bundled sample lecture notes behind "Try sample notes".
-- `src/lib/`: shared code: types, environment reading, the API client, formatting, size limits, PDF text extraction, quiz grading, the AI layer (`src/lib/ai/`), and the storage layer (`src/lib/store/`).
+- The main Next.js app screens cannot sign in yet and surface sign-in-required errors instead of features; rework is planned, and the working flow is the `frontend/` app below.
+- Without `FIREBASE_SERVICE_ACCOUNT_JSON` and `FIREBASE_DATABASE_URL`, storage is in memory and everything resets when the server restarts.
+- Scanned, image-only PDFs are not supported by the current AI, which receives text only. Upload a PDF with selectable text, or paste the notes.
+- The free model has rate limits. The app absorbs them by retrying on the paid model, so the OpenRouter account should hold a small credit balance for busy moments.
+- The guest-flow browser suites and route scripts are parked, so automated coverage of the API and UI is thin until the planned rewrite against authenticated flows lands.
 
-## Deploy on Vercel
+## Team preview frontend and extra APIs
 
-Push the repository to GitHub. Import it in Vercel. Add `GEMINI_API_KEY` and `FIREBASE_SERVICE_ACCOUNT_JSON`, the same two secrets described above, as environment variables in the Vercel project. Deploy. Nothing else is needed: the free tiers of Vercel, Google AI Studio and Firebase are enough to run a demo.
+The repository also contains the teammates' preview frontend in the `frontend/` folder. It is a separate Vite React app with its own `package.json`, so it runs independently of the main app, and it has a working Firebase email/password sign-in. It reads `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID` and `VITE_FIREBASE_APP_ID` from `frontend/.env.local` and sends the resulting ID token as a Bearer token on every API call. To run it:
 
-## Limits worth knowing
+1. Copy `frontend/.env.example` to `frontend/.env.local` and fill in the four `VITE_FIREBASE_*` values. They are public identifiers, not secrets; find them in the Firebase console under Project settings, Your apps.
+2. In the same Firebase project, enable Email/Password as a sign-in provider under Authentication, Sign-in method.
+3. Run `npm install` and then `npm run dev` inside `frontend/`.
 
-These limits keep a shared demo usable for everyone and keep AI costs bounded. They are defined in full in `docs/spec.md`.
+The server verifies that token with the Firebase Admin SDK, using the same `FIREBASE_SERVICE_ACCOUNT_JSON` documented above. Every API route except `GET /api/status` now requires a valid signed-in user and answers 401 without one, or 503 when `FIREBASE_SERVICE_ACCOUNT_JSON` is not set, so the main app's no-login guest flow no longer reaches the API. `GET /api/teacher/classroom` and `GET /api/admin/overview` additionally require the matching `teacher` or `admin` role custom claim (403 otherwise), aggregate live data from the store, and have no mock fallback. Roles are assigned only through the Admin SDK, with `node scripts/promote-role.mjs <email> <teacher|admin>`, and new signups default to the `student` role.
 
-- Each profile (each browser) can make at most 60 AI calls per day; the count resets at UTC midnight.
-- Each IP address is limited to 60 requests per minute, across every route.
-- Pasted text is capped at 300,000 characters.
-- A PDF with readable text can be up to 25 MiB. A PDF with no readable text, which is sent to the AI to read directly, is capped at a smaller 3 MiB, so that it still fits in one request.
-
-## Privacy
-
-There is no account system of any kind. On first visit, the browser generates a random profile id and stores it in `localStorage`; every request to the app carries that id, and the server keeps every note, quiz and result under it. Progress therefore belongs to the browser it was made in: clearing that browser's storage, or visiting from a different browser, starts over with a new, empty profile. The text of anything uploaded is kept on the server (in memory, or in Firestore once configured) so that quizzes, explanations and the study plan can be built from it later.
+In the `frontend/` app every screen is role-guarded: a signed-in user who opens a page above their role, for example a student opening `/admin-dashboard`, is bounced to their own role's home (`/dashboard`, `/teacher-dashboard` or `/admin-dashboard`).
+Signed-out visitors who open any screen are sent to `/login`.

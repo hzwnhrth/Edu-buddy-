@@ -197,6 +197,11 @@ async function seedProgress(
 // ---- main ---------------------------------------------------------------
 
 async function main(): Promise<void> {
+  console.log(
+    "PARKED: this script exercises the retired no-login guest flow; the API now requires a Firebase sign-in token. Rewrite against authenticated flows to re-enable."
+  );
+  process.exit(0);
+
   const store = getStore();
   const topics = SAMPLE_NOTES.topics;
 

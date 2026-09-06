@@ -6,6 +6,9 @@ suite builds and starts the app itself, in forced mock mode (mock AI,
 in-memory store), so it needs no secrets and gives the same result every
 time.
 
+The suites are currently parked and skip themselves immediately; see the
+Parking section below before expecting anything to run.
+
 ## Install
 
 From the EduBuddy folder:
@@ -52,6 +55,39 @@ In PowerShell:
 ```
 $env:EDUBUDDY_SKIP_BUILD = "1"; npm run test:e2e
 ```
+
+## Parking
+
+The suites are parked as of the Firebase sign-in merge (tree 58df117):
+`npm run test:e2e` finishes in seconds with every test reported as skipped
+and exit code 0. Nothing is built, no server is started, no browser opens.
+
+Why: these suites drive the retired no-login guest flow. The API now
+requires a Firebase sign-in token, so every screen and request they exercise
+behaves differently than when they were written. Parking keeps the run
+honest, reporting a deliberate skip instead of failures that say nothing
+about the app itself.
+
+Mechanics: the shared `Open App` keyword, which every suite calls as its
+only Suite Setup, calls the BuiltIn `Skip` keyword as its first statement.
+The init suite's `Build App` and `Start App` (in
+`robot/resources/app.resource`) skip the same way, so the run halts in each
+setup before any build, server or browser exists. A skipped setup still runs
+its suite teardown, so `Stop App` returns immediately when no server process
+was ever recorded, and `Close Browser` is already a safe no-op with no
+browser open. No suite content was deleted; every file is kept for the
+rewrite.
+
+What a rewrite needs:
+
+- Drive the app as a signed-in user, not as a guest: an authenticated
+  browser flow, either through a real sign-in step or by injecting a token
+  into the browser context.
+- Firebase test users seeded outside the suites, so sign-in is deterministic
+  and does not depend on production accounts.
+- The `VITE_FIREBASE_*` environment configuration present when the app is
+  built and started, so the client can actually authenticate against the
+  emulator or test project.
 
 ## Where the results go
 

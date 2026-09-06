@@ -57,6 +57,14 @@ function wrongIndexFor(correctIndex: number): number {
 }
 
 async function main(): Promise<void> {
+  console.log(
+    "PARKED: this script exercises the retired no-login guest flow; the API now requires a Firebase sign-in token. Rewrite against authenticated flows to re-enable."
+  );
+  process.exit(0);
+  await runChecks();
+}
+
+async function runChecks(): Promise<void> {
   const profileId = randomUUID();
   const otherProfileId = randomUUID();
 

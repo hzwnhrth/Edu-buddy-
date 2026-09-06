@@ -37,7 +37,7 @@ export const QUIZ_BANKS: QuizBank[] = [
   {
     id: "teks-sejarah-t4",
     subject: "Sejarah",
-    title: "Buku Teks Sejarah T4 — Bab 1",
+    title: "Buku Teks Sejarah T4 - Bab 1",
     topicId: "sejarah-t4-bab-1",
     topicName: "Sejarah T4 Bab 1",
     questions: [
@@ -116,7 +116,7 @@ export const QUIZ_BANKS: QuizBank[] = [
   {
     id: "teks-sejarah-t4-b2",
     subject: "Sejarah",
-    title: "Buku Teks Sejarah T4 — Bab 2",
+    title: "Buku Teks Sejarah T4 - Bab 2",
     topicId: "sejarah-t4-bab-2",
     topicName: "Bab 2: Kebangkitan Nasionalisme",
     questions: [
@@ -195,7 +195,7 @@ export const QUIZ_BANKS: QuizBank[] = [
   {
     id: "teks-sejarah-t4-b3",
     subject: "Sejarah",
-    title: "Buku Teks Sejarah T4 — Bab 3",
+    title: "Buku Teks Sejarah T4 - Bab 3",
     topicId: "sejarah-t4-bab-3",
     topicName: "Bab 3: Konflik Dunia dan Pendudukan Jepun",
     questions: [
