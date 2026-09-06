@@ -75,7 +75,7 @@ export function withRole<Params extends RouteParams = RouteParams>(
   role: UserRole,
   handler: RouteHandler<Params>
 ) {
-  return withProfile(async (args) => {
+  return withProfile(async (args: HandlerArgs<Params>) => {
     if (args.identity.role !== role) {
       return jsonError(403, "You do not have permission to access this resource");
     }
