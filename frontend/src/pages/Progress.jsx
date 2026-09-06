@@ -4,8 +4,30 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { HiOutlineTrophy, HiOutlineChartBar, HiOutlineBookOpen, HiOutlineQuestionMarkCircle } from 'react-icons/hi2';
 
 /**
+ * CustomTooltip Component
+ * Renders the tooltip shown when hovering over the performance chart bars.
+ */
+function CustomTooltip({ active, payload, label }) {
+  if (active && payload && payload.length) {
+    return (
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #E5E7EB',
+        borderRadius: '10px',
+        padding: '0.75rem 1rem',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+      }}>
+        <p style={{ fontWeight: 700, marginBottom: '0.15rem', color: '#111827', fontSize: '0.9rem' }}>{label}</p>
+        <p style={{ color: '#22C55E', fontSize: '0.85rem', fontWeight: 600 }}>Score: {payload[0].value}%</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+/**
  * Progress Component
- * Displays the student's historical data, such as past quiz results and 
+ * Displays the student's historical data, such as past quiz results and
  * notes generated. It retrieves this data from the global AppContext and
  * renders it in lists/grids.
  */
@@ -30,24 +52,6 @@ export default function Progress() {
       total: q.total || 0,
     }));
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div style={{
-          background: '#FFFFFF',
-          border: '1px solid #E5E7EB',
-          borderRadius: '10px',
-          padding: '0.75rem 1rem',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
-        }}>
-          <p style={{ fontWeight: 700, marginBottom: '0.15rem', color: '#111827', fontSize: '0.9rem' }}>{label}</p>
-          <p style={{ color: '#22C55E', fontSize: '0.85rem', fontWeight: 600 }}>Score: {payload[0].value}%</p>
-        </div>
-      );
-    }
-    return null;
-  };
-
   const getScoreBadge = (pct) => {
     if (pct >= 70) return { bg: '#DCFCE7', color: '#16A34A', border: 'rgba(34,197,94,0.2)' };
     if (pct >= 50) return { bg: '#FEF3C7', color: '#D97706', border: 'rgba(245,158,11,0.2)' };
@@ -62,7 +66,7 @@ export default function Progress() {
     >
       <div className="page-header">
         <h1>Your Progress</h1>
-        <p>Track your learning journey and see how you're improving over time.</p>
+        <p>Track your learning journey and see how you&apos;re improving over time.</p>
       </div>
 
       {/* Stats */}

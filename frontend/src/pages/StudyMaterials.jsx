@@ -7,7 +7,7 @@ import { HiOutlineBookOpen, HiOutlineDocumentText, HiOutlineCheckBadge, HiOutlin
 /**
  * StudyMaterials Component (Student)
  * A read-only library of study materials approved by the teacher.
- * Students cannot generate their own notes — they only see what has been
+ * Students cannot generate their own notes - they only see what has been
  * reviewed and published. Opening a material loads it as active study content.
  */
 export default function StudyMaterials() {
@@ -55,7 +55,7 @@ export default function StudyMaterials() {
                   <HiOutlineBookOpen />
                 </div>
                 <h3>No materials yet</h3>
-                <p>Your teacher hasn't published any study materials yet. Check back soon!</p>
+                <p>Your teacher hasn&apos;t published any study materials yet. Check back soon!</p>
               </div>
             </div>
           ) : (
@@ -186,7 +186,7 @@ export default function StudyMaterials() {
 
           <div className="card" style={{ marginTop: '2rem', textAlign: 'center' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Ready to test yourself?</h3>
-            <p style={{ color: '#6B7280', fontSize: '0.9rem', marginBottom: '1rem' }}>This material is loaded — jump into Quiz Arena to practice it.</p>
+            <p style={{ color: '#6B7280', fontSize: '0.9rem', marginBottom: '1rem' }}>This material is loaded - jump into Quiz Arena to practice it.</p>
             <Link to="/quiz" className="btn btn-primary" style={{ borderRadius: '9999px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
               <HiOutlineLightBulb /> Go to Quiz Arena
             </Link>

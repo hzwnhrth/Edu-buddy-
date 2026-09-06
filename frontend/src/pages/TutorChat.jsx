@@ -276,7 +276,7 @@ export default function TutorChat() {
                 <HiOutlineXMark />
               </button>
             </div>
-            <span style={{ fontSize: '0.78rem', color: '#6B7280', fontWeight: 600 }}>Image attached — will be sent with your next message</span>
+            <span style={{ fontSize: '0.78rem', color: '#6B7280', fontWeight: 600 }}>Image attached - will be sent with your next message</span>
           </motion.div>
         )}
       </AnimatePresence>

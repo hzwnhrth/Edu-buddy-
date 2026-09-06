@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
-import { HiOutlineUser, HiOutlineEnvelope, HiOutlineLockClosed, HiOutlineEye, HiOutlineEyeSlash, HiOutlineAcademicCap, HiOutlineBuildingLibrary, HiOutlineArrowRight, HiOutlineSparkles } from 'react-icons/hi2';
+import { HiOutlineUser, HiOutlineEnvelope, HiOutlineLockClosed, HiOutlineEye, HiOutlineEyeSlash, HiOutlineArrowRight, HiOutlineAcademicCap, HiOutlineBuildingLibrary } from 'react-icons/hi2';
+
+const homeForRole = { student: '/dashboard', teacher: '/teacher-dashboard', admin: '/admin-dashboard' };
 
 const roles = [
   { key: 'student', label: 'Student', icon: HiOutlineUser, color: '#16A34A', bg: '#DCFCE7' },
   { key: 'teacher', label: 'Teacher', icon: HiOutlineAcademicCap, color: '#2563EB', bg: '#DBEAFE' },
   { key: 'admin', label: 'Admin', icon: HiOutlineBuildingLibrary, color: '#7C3AED', bg: '#EDE9FE' },
 ];
-
-const homeForRole = { student: '/dashboard', teacher: '/teacher-dashboard', admin: '/admin-dashboard' };
 
 function passwordStrength(pw) {
   let score = 0;
@@ -29,8 +29,7 @@ function passwordStrength(pw) {
 /**
  * Auth Component
  * Combined Login / Signup screen. Follows the app's Neo-Minimalist theme:
- * centered card, dotted backdrop, green primary action. Mock authentication
- * backed by localStorage — same shape a real auth API will replace later.
+ * centered card, dotted backdrop, and Firebase email/password authentication.
  */
 export default function Auth() {
   const location = useLocation();
@@ -59,20 +58,18 @@ export default function Auth() {
     setLoading(true);
     try {
       if (isSignup) {
-        const result = signup({ name: name.trim(), email: email.trim().toLowerCase(), password, role });
-        if (result?.error) {
-          setError(result.error);
-          return;
-        }
-        navigate(homeForRole[role] || '/dashboard', { replace: true });
+        const user = await signup({ name: name.trim(), email: email.trim().toLowerCase(), password, role });
+        navigate(homeForRole[user.role] || '/dashboard', { replace: true });
       } else {
-        const user = login(email.trim().toLowerCase(), password);
+        const user = await login(email.trim().toLowerCase(), password);
         if (!user) {
           setError('Wrong email or password. Try again, or create a new account.');
           return;
         }
         navigate(homeForRole[user.role] || '/dashboard', { replace: true });
       }
+    } catch (cause) {
+      setError(cause.message || 'Unable to authenticate. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -142,6 +139,11 @@ export default function Auth() {
                 );
               })}
             </div>
+            {role !== 'student' && (
+              <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: '#9CA3AF', fontWeight: 600, textAlign: 'center' }}>
+                Only whitelisted emails can sign up as {role}. Ask your school admin to add you first.
+              </motion.p>
+            )}
           </motion.div>
         )}
 
@@ -214,12 +216,6 @@ export default function Auth() {
           </Link>
         </p>
 
-        {/* Guest escape hatch — demo-friendly */}
-        <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
-          <Link to="/dashboard" style={{ fontSize: '0.82rem', color: '#9CA3AF', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-            <HiOutlineSparkles /> Continue as guest
-          </Link>
-        </div>
       </motion.div>
     </div>
   );

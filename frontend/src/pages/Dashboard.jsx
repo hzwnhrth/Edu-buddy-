@@ -64,7 +64,7 @@ export default function Dashboard() {
         </div>
         <div className="streak-info">
           <h3>{stats.studyStreak || 0} Day Streak</h3>
-          <p>Keep it going — consistency is the key to mastery</p>
+          <p>Keep it going - consistency is the key to mastery</p>
         </div>
       </motion.div>
 

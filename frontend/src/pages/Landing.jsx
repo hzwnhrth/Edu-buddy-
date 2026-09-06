@@ -91,7 +91,7 @@ export default function Landing() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.4, type: 'spring', stiffness: 80 }}
           >
-            One website for smart note summaries, personalized quizzes, and an AI tutor that's always ready to help.
+            One website for smart note summaries, personalized quizzes, and an AI tutor that&apos;s always ready to help.
           </motion.p>
           
           <motion.div 
@@ -114,9 +114,9 @@ export default function Landing() {
               whileTap={{ scale: 0.97 }}
               className="btn btn-secondary"
               style={{ padding: '0.85rem 2rem', fontSize: '1rem', borderRadius: '9999px' }}
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/login')}
             >
-              Browse Study Materials
+              Sign In
             </motion.button>
           </motion.div>
         </div>

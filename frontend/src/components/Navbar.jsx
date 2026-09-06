@@ -24,12 +24,7 @@ export default function Navbar() {
   const { currentUser, logout } = useAppContext();
   const title = pageTitles[location.pathname] || 'EduBuddy AI';
 
-  const role =
-    currentUser?.role === 'teacher' ? 'Teacher'
-      : currentUser?.role === 'admin' ? 'Admin'
-        : location.pathname.startsWith('/teacher-dashboard') ? 'Teacher'
-          : location.pathname.startsWith('/admin-dashboard') ? 'Admin'
-            : 'Student';
+  const role = currentUser?.role === 'teacher' ? 'Teacher' : currentUser?.role === 'admin' ? 'Admin' : 'Student';
 
   const roleStyles = {
     Student: { pillBg: '#DCFCE7', pillBorder: 'rgba(34,197,94,0.25)', pillText: '#16A34A', avatar: 'linear-gradient(135deg, #22C55E, #16A34A)', shadow: 'rgba(34, 197, 94, 0.3)' },
@@ -73,7 +68,7 @@ export default function Navbar() {
         </div>
         {currentUser ? (
           <button
-            onClick={() => { logout(); navigate('/login'); }}
+            onClick={async () => { await logout(); navigate('/login'); }}
             style={{
               background: 'none', border: '1px solid #E5E7EB', cursor: 'pointer', fontFamily: 'inherit',
               borderRadius: '9999px', padding: '0.45rem 0.85rem', fontSize: '0.78rem', fontWeight: 700,

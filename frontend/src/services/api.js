@@ -2,35 +2,22 @@ const API_BASE = '/api';
 
 /**
  * getProfileId
- * The backend identifies every browser by an anonymous profile id, read from
- * localStorage and created on first use. It is sent as the x-profile-id
- * header on every request (this is EduBuddy's only notion of identity).
+ * The backend identifies a user by their verified Firebase ID token.
  */
-export function getProfileId() {
-  let id = localStorage.getItem('edubuddy.profileId');
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem('edubuddy.profileId', id);
-  }
-  return id;
-}
+import { getFirebaseAuth } from '../lib/firebase';
 
 async function apiFetch(path, { method = 'GET', body } = {}) {
-  // Opportunistic display-name sync: the backend stores the signed-in
-  // user's name on any request, so the teacher's classroom view shows
-  // real names without a separate update call.
-  let displayName = null;
-  try {
-    const saved = JSON.parse(localStorage.getItem('edubuddy_data') || '{}');
-    displayName = saved.currentUser?.name || null;
-  } catch { /* ignore */ }
+  const user = getFirebaseAuth().currentUser;
+  if (!user) {
+    throw new Error('Sign in is required');
+  }
+  const idToken = await user.getIdToken();
 
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'x-profile-id': getProfileId(),
-      ...(displayName ? { 'x-display-name': displayName } : {}),
+      Authorization: `Bearer ${idToken}`,
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -40,6 +27,18 @@ async function apiFetch(path, { method = 'GET', body } = {}) {
     throw new Error((data && data.error) || res.statusText || 'Request failed');
   }
   return data;
+}
+
+/**
+ * setRole
+ * Sets the signed-in user's role claim after signup. Teacher and admin
+ * are gated by a server-side email whitelist.
+ */
+export function setRole(role) {
+  return apiFetch('/auth/set-role', {
+    method: 'POST',
+    body: { role },
+  });
 }
 
 /**

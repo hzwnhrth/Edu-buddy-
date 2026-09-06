@@ -183,7 +183,7 @@ export default function QuizArena() {
                 style={{ minHeight: '110px' }}
               />
               <p style={{ fontSize: '0.8rem', color: '#9CA3AF', marginTop: '0.6rem' }}>
-                Tip: Open a material from the Study Materials page — it will be automatically used here.
+                Tip: Open a material from the Study Materials page - it will be automatically used here.
               </p>
             </motion.div>
           )}
@@ -308,7 +308,7 @@ export default function QuizArena() {
                       color: t.weak ? '#DC2626' : '#16A34A',
                     }}
                   >
-                    {t.name} — {t.correct}/{t.total}
+                    {t.name} - {t.correct}/{t.total}
                   </span>
                 ))}
               </div>
