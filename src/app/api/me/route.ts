@@ -2,6 +2,9 @@ import { jsonOk, withProfile } from "@/lib/api";
 import type { AttemptSummary, MeResponse } from "@/lib/api-types";
 import type { Quiz } from "@/lib/types";
 
+// Firebase Admin verifies bearer tokens in this route and requires Node APIs.
+export const runtime = "nodejs";
+
 // How many past attempts the dashboard needs: the most recent ones only.
 const MAX_ME_ATTEMPTS = 20;
 
