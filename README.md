@@ -35,7 +35,7 @@ Whenever a fallback is active, the header shows a "Mock AI" badge, a "Memory sto
 
 ## Configuration
 
-Copy `.env.example` to `.env.local` and fill in what you have. The four variables:
+Copy `.env.example` to `.env.local` and fill in what you have. The six variables:
 
 | Variable | Meaning |
 | --- | --- |
@@ -43,6 +43,8 @@ Copy `.env.example` to `.env.local` and fill in what you have. The four variable
 | `FIREBASE_DATABASE_URL` | The Realtime Database URL of the same project, for example `https://your-project-default-rtdb.firebaseio.com/`. Real storage needs this together with the service account. Without them, data is kept in memory and resets on every restart. |
 | `OPENROUTER_API_KEY` | A key from https://openrouter.ai/keys. Empty means mock AI. |
 | `OPENROUTER_MODEL` | Optional. One specific model id, which replaces the default model chain entirely. Empty means the chain described below. |
+| `ROLE_TEACHER_CODE` | Optional. The team access code a person types to take the `teacher` role at sign-in (see Choosing a role at sign-in below). Unset, that upgrade is refused. |
+| `ROLE_ADMIN_CODE` | Optional. The team access code for the `admin` role. |
 
 The service account JSON must be flattened to one line and wrapped in single quotes. Recipe: open the downloaded JSON file, join all of it onto a single line, and put single quotes around the whole thing, exactly like this:
 
@@ -123,4 +125,6 @@ The repository also contains the teammates' preview frontend in the `frontend/` 
 2. In the same Firebase project, enable Email/Password as a sign-in provider under Authentication, Sign-in method.
 3. Run `npm install` and then `npm run dev` inside `frontend/`.
 
-The server verifies that token with the Firebase Admin SDK, using the same `FIREBASE_SERVICE_ACCOUNT_JSON` documented above. Every API route except `GET /api/status` now requires a valid signed-in user and answers 401 without one, or 503 when `FIREBASE_SERVICE_ACCOUNT_JSON` is not set, so the main app's no-login guest flow no longer reaches the API. `GET /api/teacher/classroom` and `GET /api/admin/overview` additionally require the matching `teacher` or `admin` role custom claim (403 otherwise), aggregate live data from the store, and have no mock fallback. Roles are assigned only through the Admin SDK, with `node scripts/promote-role.mjs <email> <teacher|admin>`, and new signups default to the `student` role.
+The server verifies that token with the Firebase Admin SDK, using the same `FIREBASE_SERVICE_ACCOUNT_JSON` documented above. Every API route except `GET /api/status` now requires a valid signed-in user and answers 401 without one, or 503 when `FIREBASE_SERVICE_ACCOUNT_JSON` is not set, so the main app's no-login guest flow no longer reaches the API. `GET /api/teacher/classroom` and `GET /api/admin/overview` additionally require the matching `teacher` or `admin` role custom claim (403 otherwise), aggregate live data from the store, and have no mock fallback. Roles are written to the Firebase token as a `role` custom claim through the Admin SDK: the app's role picker does it for you, and `node scripts/promote-role.mjs <email> <teacher|admin>` stays available as a manual alternative that sets the same claim. New signups default to the `student` role.
+
+Choosing a role at sign-in: the sign-up and sign-in screens offer a role picker with three choices, Student, Teacher and Admin. Your account's role follows the most recent choice you make at sign-in, so the same account can move between roles across sign-ins. Student is always available and needs no code. Teachers and admins type a team access code when they move up (student to teacher, teacher to admin); picking the role you already have, or going back to Student, never asks for a code, and a wrong code shows a message on the form without going anywhere. After a successful choice the app refreshes your sign-in token and takes you to that role's home screen (the dashboard for students, the teacher or admin dashboard otherwise). The codes live in the server's `.env.local` as `ROLE_TEACHER_CODE` and `ROLE_ADMIN_CODE`; only their names appear in the committed `.env.example`. They are demo-grade: change one by editing the file and restarting the server.

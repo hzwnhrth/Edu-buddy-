@@ -69,3 +69,10 @@ export async function authenticateRequest(authorization: string | null): Promise
     throw new AuthError("Your session is invalid or has expired");
   }
 }
+
+// Writes the role custom claim on the Firebase user. Claims are read back on
+// every request by authenticateRequest, so changes take effect on the next
+// token the client obtains.
+export async function setUserRole(uid: string, role: UserRole): Promise<void> {
+  await getAdminAuth().setCustomUserClaims(uid, { role });
+}

@@ -135,8 +135,19 @@ export function AppProvider({ children }) {
   }));
   const clearChatHistory = () => setState((prev) => ({ ...prev, chatHistory: [] }));
 
+  const refreshUserRole = async () => {
+    const user = getFirebaseAuth().currentUser;
+    if (!user) return null;
+    await user.getIdToken(true);
+    const result = await user.getIdTokenResult();
+    const role = roleFromClaims(result.claims);
+    const currentUser = { ...state.currentUser, role };
+    setState((prev) => ({ ...prev, currentUser }));
+    return currentUser;
+  };
+
   return (
-    <AppContext.Provider value={{ ...state, authReady, signup, login, logout, setStudyContent, setActiveMaterial, addNotesResult, approveNote, removeApprovedNote, addQuizResult, addChatMessage, clearChatHistory }}>
+    <AppContext.Provider value={{ ...state, authReady, signup, login, logout, setStudyContent, setActiveMaterial, addNotesResult, approveNote, removeApprovedNote, addQuizResult, addChatMessage, clearChatHistory, refreshUserRole }}>
       {children}
     </AppContext.Provider>
   );

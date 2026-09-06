@@ -8,6 +8,8 @@ export interface Env {
   firebaseDatabaseUrl: string;
   dailyAiCallCap: number;
   ipRequestsPerMinute: number;
+  roleTeacherCode: string;
+  roleAdminCode: string;
 }
 
 const DEFAULT_DAILY_AI_CALL_CAP = 60;
@@ -28,6 +30,8 @@ function readEnv(): Env {
   const rawCap = (process.env.DAILY_AI_CALL_CAP ?? "").trim();
   const parsedCap = parseInt(rawCap, 10);
   const dailyAiCallCap = Number.isNaN(parsedCap) ? DEFAULT_DAILY_AI_CALL_CAP : parsedCap;
+  const roleTeacherCode = (process.env.ROLE_TEACHER_CODE ?? "").trim();
+  const roleAdminCode = (process.env.ROLE_ADMIN_CODE ?? "").trim();
   const rawPerMinute = (process.env.IP_REQUESTS_PER_MINUTE ?? "").trim();
   const parsedPerMinute = parseInt(rawPerMinute, 10);
   const ipRequestsPerMinute =
@@ -44,6 +48,8 @@ function readEnv(): Env {
     firebaseDatabaseUrl,
     dailyAiCallCap,
     ipRequestsPerMinute,
+    roleTeacherCode,
+    roleAdminCode,
   };
 }
 
