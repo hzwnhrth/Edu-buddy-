@@ -1,8 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { checkIpLimit, LimitError } from "@/lib/limits";
-import { authenticateRequest, AuthError, type AuthenticatedUser, type UserRole } from "@/lib/auth";
-import { getStore } from "@/lib/store";
+import type { AuthenticatedUser, UserRole } from "@/lib/auth";
 import type { Store } from "@/lib/store/types";
 import type { Profile } from "@/lib/types";
 
@@ -36,10 +34,24 @@ export function withProfile<Params extends RouteParams = RouteParams>(
 ) {
   return async (request: NextRequest, context?: RouteContext<Params>): Promise<Response> => {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+    let AuthErrorClass: (new (...args: never[]) => Error & { status: 401 | 403 | 503 }) | undefined;
+    let LimitErrorClass: (new (...args: never[]) => Error) | undefined;
     try {
-      checkIpLimit(ip);
+      // Do not initialize Firebase Admin or RTDB for requests that do not have
+      // a token. Besides being cheaper, this keeps the public error response
+      // available when a server-only dependency cannot load during cold start.
+      if (!request.headers.get("authorization")?.match(/^Bearer\s+.+$/i)) {
+        return jsonError(401, "Sign in is required");
+      }
 
-      const identity = await authenticateRequest(request.headers.get("authorization"));
+      const limits = await import("@/lib/limits");
+      LimitErrorClass = limits.LimitError;
+      const auth = await import("@/lib/auth");
+      AuthErrorClass = auth.AuthError;
+      const { getStore } = await import("@/lib/store");
+
+      limits.checkIpLimit(ip);
+      const identity = await auth.authenticateRequest(request.headers.get("authorization"));
       const store = getStore();
       let profile = await store.getOrCreateProfile(identity.uid);
       const params = context ? await context.params : ({} as Params);
@@ -53,10 +65,10 @@ export function withProfile<Params extends RouteParams = RouteParams>(
 
       return await handler({ request, profile, identity, store, params });
     } catch (error) {
-      if (error instanceof AuthError) {
+      if (AuthErrorClass && error instanceof AuthErrorClass) {
         return jsonError(error.status, error.message);
       }
-      if (error instanceof LimitError) {
+      if (LimitErrorClass && error instanceof LimitErrorClass) {
         console.warn(`rate limit reached for ip "${ip}": ${error.message}`);
         return jsonError(429, error.message);
       }
