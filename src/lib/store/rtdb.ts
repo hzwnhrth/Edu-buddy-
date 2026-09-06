@@ -123,6 +123,8 @@ function normalizeMaterial(materialId: string, value: StoredObject): Material {
     id: materialId,
     topics: asArray<Topic>(value.topics),
     notes: stored.notes ?? null,
+    visibility: stored.visibility === "published" ? "published" : "draft",
+    publishedAt: nullableString(value.publishedAt),
   };
 }
 
@@ -272,6 +274,18 @@ export class RtdbStore implements Store {
       normalizeMaterial(materialId, (value ?? {}) as StoredObject)
     );
     return materials.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listPublishedMaterials(): Promise<Material[]> {
+    const collection = await readObject("materials");
+    const materials: Material[] = [];
+    for (const [profileId, byMaterial] of Object.entries(collection ?? {})) {
+      for (const [materialId, value] of Object.entries((byMaterial ?? {}) as StoredObject)) {
+        const material = normalizeMaterial(materialId, value as StoredObject);
+        if (material.visibility === "published") materials.push({ ...material, profileId });
+      }
+    }
+    return materials.sort((a, b) => (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt));
   }
 
   async getChunks(materialId: string): Promise<Chunk[]> {

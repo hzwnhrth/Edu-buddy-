@@ -21,6 +21,7 @@ export interface Store {
     patch: Partial<Omit<Material, "id" | "profileId">>
   ): Promise<void>;
   listMaterials(profileId: string): Promise<Material[]>;
+  listPublishedMaterials(): Promise<Material[]>;
   getChunks(materialId: string): Promise<Chunk[]>;
 
   createQuiz(data: Omit<Quiz, "id">): Promise<Quiz>;

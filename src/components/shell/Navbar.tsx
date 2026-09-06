@@ -18,6 +18,7 @@ const pageTitles: Record<string, string> = {
 
 interface NavbarProps {
   onMenuToggle: () => void;
+  role: "student" | "teacher" | "admin";
 }
 
 /**
@@ -26,7 +27,7 @@ interface NavbarProps {
  * based on the route, and includes the SDG 4 badge and a user profile icon.
  * The menu button only appears on small screens, where it opens the sidebar.
  */
-export function Navbar({ onMenuToggle }: NavbarProps) {
+export function Navbar({ onMenuToggle, role }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const title = pageTitles[pathname] ?? "EduBuddy AI";
@@ -74,7 +75,7 @@ export function Navbar({ onMenuToggle }: NavbarProps) {
             boxShadow: "0 2px 8px rgba(34, 197, 94, 0.3)",
           }}
         >
-          S
+          {role.slice(0, 1).toUpperCase()}
         </div>
       </div>
     </header>

@@ -118,6 +118,13 @@ export class MemoryStore implements Store {
       .map((material) => ({ ...material }));
   }
 
+  async listPublishedMaterials(): Promise<Material[]> {
+    return [...this.tables.materials.values()]
+      .filter((material) => material.visibility === "published")
+      .sort((a, b) => (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt))
+      .map((material) => ({ ...material }));
+  }
+
   async getChunks(materialId: string): Promise<Chunk[]> {
     const chunks = this.tables.chunksByMaterial.get(materialId) ?? [];
     return [...chunks].sort((a, b) => a.order - b.order);

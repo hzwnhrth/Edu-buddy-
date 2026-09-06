@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { IconType } from "react-icons";
 import {
+  HiOutlineBuildingLibrary,
   HiOutlineChartBar,
   HiOutlineChatBubbleLeftRight,
   HiOutlineDocumentText,
   HiOutlineHome,
   HiOutlineLightBulb,
+  HiOutlineUserGroup,
 } from "react-icons/hi2";
 
 interface NavItem {
@@ -17,13 +19,21 @@ interface NavItem {
   label: string;
 }
 
-const navItems: NavItem[] = [
+const studentNavItems: NavItem[] = [
   { to: "/dashboard", icon: HiOutlineHome, label: "Dashboard" },
   { to: "/notes", icon: HiOutlineDocumentText, label: "Notes Generator" },
   { to: "/quiz", icon: HiOutlineLightBulb, label: "Quiz Arena" },
   { to: "/chat", icon: HiOutlineChatBubbleLeftRight, label: "AI Tutor" },
   { to: "/progress", icon: HiOutlineChartBar, label: "Progress" },
 ];
+
+const workspaceNavItems: Record<"teacher" | "admin", NavItem[]> = {
+  teacher: [
+    { to: "/teacher-dashboard", icon: HiOutlineUserGroup, label: "Classroom" },
+    { to: "/notes", icon: HiOutlineDocumentText, label: "Lesson Studio" },
+  ],
+  admin: [{ to: "/admin-dashboard", icon: HiOutlineBuildingLibrary, label: "School Overview" }],
+};
 
 // Matches react-router NavLink semantics: a link stays active on child routes,
 // so /notes/abc still highlights Notes Generator.
@@ -36,8 +46,9 @@ function isRouteActive(pathname: string, href: string) {
  * Renders the side navigation menu. Contains links to all the main features
  * (Dashboard, Notes Generator, etc.) and the Demo Views switcher at the bottom.
  */
-export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
+export function Sidebar({ role, open, onNavigate }: { role: "student" | "teacher" | "admin"; open: boolean; onNavigate: () => void }) {
   const pathname = usePathname();
+  const navItems = role === "student" ? studentNavItems : workspaceNavItems[role];
 
   const itemClass = (href: string) =>
     `nav-item ${isRouteActive(pathname, href) ? "active" : ""}`;
@@ -68,19 +79,8 @@ export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () =>
         ))}
       </nav>
 
-      <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid #E5E7EB", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <div style={{ fontSize: "0.65rem", color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "1px", fontWeight: 800, marginBottom: "0.25rem" }}>
-          Demo Views
-        </div>
-        <Link href="/dashboard" className={itemClass("/dashboard")} style={{ padding: "0.5rem", fontSize: "0.8rem" }} onClick={onNavigate}>
-          Student View
-        </Link>
-        <Link href="/teacher-dashboard" className={itemClass("/teacher-dashboard")} style={{ padding: "0.5rem", fontSize: "0.8rem" }} onClick={onNavigate}>
-          Teacher View
-        </Link>
-        <Link href="/admin-dashboard" className={itemClass("/admin-dashboard")} style={{ padding: "0.5rem", fontSize: "0.8rem" }} onClick={onNavigate}>
-          Admin View
-        </Link>
+      <div style={{ marginTop: "auto", padding: "1rem 1.25rem", borderTop: "1px solid #E5E7EB", fontSize: "0.7rem", color: "#9CA3AF", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        {role} workspace
       </div>
     </aside>
   );

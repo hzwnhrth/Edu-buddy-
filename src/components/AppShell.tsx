@@ -8,6 +8,18 @@ import { Navbar } from "@/components/shell/Navbar";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { getFirebaseAuth } from "@/lib/firebase-client";
 
+type Role = "student" | "teacher" | "admin";
+
+const homeForRole: Record<Role, string> = {
+  student: "/dashboard",
+  teacher: "/teacher-dashboard",
+  admin: "/admin-dashboard",
+};
+
+function roleForClaims(role: unknown): Role {
+  return role === "teacher" || role === "admin" ? role : "student";
+}
+
 export interface AppShellProps {
   children: ReactNode;
 }
@@ -21,22 +33,32 @@ export function AppShell({ children }: AppShellProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const [role, setRole] = useState<Role>("student");
   const [configurationError, setConfigurationError] = useState(false);
   const isAuthPage = pathname === "/login" || pathname === "/signup";
   const isPublicPage = pathname === "/" || isAuthPage;
 
   useEffect(() => {
     try {
-      return onAuthStateChanged(getFirebaseAuth(), (user) => {
+      return onAuthStateChanged(getFirebaseAuth(), async (user) => {
         setReady(true);
         if (!user && !isPublicPage) router.replace("/login");
-        if (user && isAuthPage) router.replace("/dashboard");
+        if (!user) return;
+
+        const userRole = roleForClaims((await user.getIdTokenResult()).claims.role);
+        setRole(userRole);
+        const home = homeForRole[userRole];
+        if (isAuthPage) router.replace(home);
+        if (pathname === "/teacher-dashboard" && userRole !== "teacher") router.replace(home);
+        if (pathname === "/admin-dashboard" && userRole !== "admin") router.replace(home);
+        if (["/dashboard", "/quiz", "/chat", "/progress"].includes(pathname) && userRole !== "student") router.replace(home);
+        if (pathname === "/notes" && userRole === "admin") router.replace(home);
       });
     } catch {
       setConfigurationError(true);
       setReady(true);
     }
-  }, [isAuthPage, isPublicPage, router]);
+  }, [isAuthPage, isPublicPage, pathname, router]);
 
   if (isPublicPage) {
     return <>{children}</>;
@@ -50,8 +72,8 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="app-layout">
-      <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
-      <Navbar onMenuToggle={() => setSidebarOpen((open) => !open)} />
+      <Sidebar role={role} open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
+      <Navbar role={role} onMenuToggle={() => setSidebarOpen((open) => !open)} />
       <main className="main-content">{children}</main>
     </div>
   );

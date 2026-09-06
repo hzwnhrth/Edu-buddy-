@@ -1,4 +1,5 @@
-import { jsonError, jsonOk, withProfile } from "@/lib/api";
+import { jsonError, jsonOk, parseBody, withProfile, withRole } from "@/lib/api";
+import { z } from "zod";
 import type { AttemptSummary, MaterialResponse } from "@/lib/api-types";
 import type { Quiz } from "@/lib/types";
 
@@ -7,7 +8,7 @@ import type { Quiz } from "@/lib/types";
 // topics.
 export const GET = withProfile<{ id: string }>(async ({ profile, store, params }) => {
   const material = await store.getMaterial(params.id);
-  if (!material || material.profileId !== profile.id) {
+  if (!material || (material.profileId !== profile.id && material.visibility !== "published")) {
     return jsonError(404, "Not found");
   }
 
@@ -41,4 +42,13 @@ export const GET = withProfile<{ id: string }>(async ({ profile, store, params }
   );
 
   return jsonOk<MaterialResponse>({ material, attempts: attemptSummaries, progress });
+});
+
+export const PATCH = withRole<{ id: string }>("teacher", async ({ request, identity, store, params }) => {
+  const { visibility } = await parseBody(request, z.object({ visibility: z.enum(["draft", "published"]) }));
+  const material = await store.getMaterial(params.id);
+  if (!material || material.profileId !== identity.uid) return jsonError(404, "Not found");
+  if (material.status !== "ready" || !material.notes) return jsonError(400, "Generate notes before publishing this material");
+  await store.updateMaterial(material.id, { visibility, publishedAt: visibility === "published" ? new Date().toISOString() : null });
+  return jsonOk({ ...material, visibility, publishedAt: visibility === "published" ? new Date().toISOString() : null });
 });

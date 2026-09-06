@@ -3,6 +3,7 @@ export type Difficulty = "easy" | "medium" | "hard";
 
 // Processing state of an uploaded material.
 export type MaterialStatus = "processing" | "ready" | "error";
+export type MaterialVisibility = "draft" | "published";
 
 // A topic extracted from a material by the AI layer.
 export interface Topic {
@@ -56,6 +57,10 @@ export interface Material {
   // asks for them again. Absent until the first /api/notes call for this
   // material, so existing materials stay valid without a data migration.
   notes?: MaterialNotes | null;
+  // Teacher-created material stays private until it is explicitly published
+  // for the student library. Existing records default to draft when read.
+  visibility?: MaterialVisibility;
+  publishedAt?: string | null;
 }
 
 // One ordered slice of a material's extracted text, stored for later AI passes.
