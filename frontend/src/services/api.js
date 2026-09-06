@@ -144,13 +144,6 @@ export function getTeacherClassroom() {
 }
 
 /**
- * setRole
- * Assigns the signed-in profile a role (student, teacher, admin). Teachers and
- * admins also send the access code the server checks against.
- */
-export function setRole(role, code) { return apiFetch('/role', { method: 'POST', body: { role, ...(code ? { code } : {}) } }); }
-
-/**
  * getStatus
  * Health check: which AI and store backends are live.
  */

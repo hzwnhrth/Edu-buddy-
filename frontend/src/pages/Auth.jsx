@@ -2,21 +2,9 @@ import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAppContext } from '../context/AppContext';
-import { setRole } from '../services/api';
 import { HiOutlineUser, HiOutlineEnvelope, HiOutlineLockClosed, HiOutlineEye, HiOutlineEyeSlash, HiOutlineArrowRight } from 'react-icons/hi2';
 
 const homeForRole = { student: '/dashboard', teacher: '/teacher-dashboard', admin: '/admin-dashboard' };
-const ROLE_HINT_KEY = 'edubuddy.roleHint';
-const roleOptions = [
-  { value: 'student', label: 'Student' },
-  { value: 'teacher', label: 'Teacher' },
-  { value: 'admin', label: 'Admin' },
-];
-
-function readRoleHint() {
-  const saved = localStorage.getItem(ROLE_HINT_KEY);
-  return roleOptions.some((option) => option.value === saved) ? saved : 'student';
-}
 
 function passwordStrength(pw) {
   let score = 0;
@@ -41,19 +29,16 @@ export default function Auth() {
   const location = useLocation();
   const navigate = useNavigate();
   const isSignup = location.pathname === '/signup';
-  const { login, signup, refreshUserRole } = useAppContext();
+  const { login, signup } = useAppContext();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedRole, setSelectedRole] = useState(readRoleHint);
-  const [accessCode, setAccessCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const strength = passwordStrength(password);
-  const needsCode = selectedRole === 'teacher' || selectedRole === 'admin';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -66,25 +51,16 @@ export default function Auth() {
     setLoading(true);
     try {
       if (isSignup) {
-        await signup({ name: name.trim(), email: email.trim().toLowerCase(), password });
+        const user = await signup({ name: name.trim(), email: email.trim().toLowerCase(), password });
+        navigate(homeForRole[user.role] || '/dashboard', { replace: true });
       } else {
-        const signedIn = await login(email.trim().toLowerCase(), password);
-        if (!signedIn) {
+        const user = await login(email.trim().toLowerCase(), password);
+        if (!user) {
           setError('Wrong email or password. Try again, or create a new account.');
           return;
         }
+        navigate(homeForRole[user.role] || '/dashboard', { replace: true });
       }
-
-      try {
-        await setRole(selectedRole, needsCode ? accessCode : '');
-      } catch (cause) {
-        setError(cause.message || 'Could not save your role. Please try again.');
-        return;
-      }
-
-      const user = await refreshUserRole();
-      localStorage.setItem(ROLE_HINT_KEY, selectedRole);
-      navigate(homeForRole[user?.role] || '/dashboard', { replace: true });
     } catch (cause) {
       setError(cause.message || 'Unable to authenticate. Please try again.');
     } finally {
@@ -142,35 +118,6 @@ export default function Auth() {
             <input style={inputStyle} type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus />
           </div>
 
-          {/* Role picker */}
-          <div
-            role="group"
-            aria-label="Choose your role"
-            style={{ display: 'flex', gap: '0.35rem', padding: '0.3rem', borderRadius: '14px', border: '1px solid #E5E7EB', background: '#F9FAFB' }}
-          >
-            {roleOptions.map((option) => {
-              const active = selectedRole === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setSelectedRole(option.value)}
-                  aria-pressed={active}
-                  style={{
-                    flex: 1, padding: '0.6rem 0.4rem', borderRadius: '10px', border: 'none', cursor: 'pointer',
-                    fontSize: '0.85rem', fontWeight: 800, fontFamily: 'inherit',
-                    transition: 'background 0.2s, color 0.2s, box-shadow 0.2s',
-                    background: active ? '#22C55E' : 'transparent',
-                    color: active ? '#FFFFFF' : '#6B7280',
-                    boxShadow: active ? '0 2px 8px rgba(34, 197, 94, 0.25)' : 'none',
-                  }}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-
           <div style={{ position: 'relative' }}>
             <HiOutlineLockClosed style={iconStyle} />
             <input
@@ -189,22 +136,6 @@ export default function Auth() {
               {showPassword ? <HiOutlineEyeSlash style={{ fontSize: '1.05rem' }} /> : <HiOutlineEye style={{ fontSize: '1.05rem' }} />}
             </button>
           </div>
-
-          {/* Access code (teachers and admins only) */}
-          {needsCode && (
-            <div style={{ position: 'relative' }}>
-              <HiOutlineLockClosed style={iconStyle} />
-              <input
-                style={inputStyle}
-                type="password"
-                placeholder="Access code"
-                aria-label="Access code"
-                value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value)}
-                autoComplete="off"
-              />
-            </div>
-          )}
 
           {/* Password strength (signup only) */}
           {isSignup && password.length > 0 && (
