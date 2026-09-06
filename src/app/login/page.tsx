@@ -108,8 +108,10 @@ export function AuthForm({ title, subtitle, submitLabel, error, loading, onSubmi
     <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FAFBFC", padding: "1.5rem", position: "relative" }}>
       <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, #E5E7EB 1px, transparent 1px)", backgroundSize: "24px 24px", opacity: 0.5 }} />
       <motion.form initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.5, ease: "easeOut" }} onSubmit={onSubmit} style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: "440px", background: "#FFFFFF", borderRadius: "28px", padding: "2.75rem 2.5rem", boxShadow: "0 24px 48px rgba(0,0,0,0.06)", border: "1px solid rgba(0,0,0,0.03)" }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <motion.img src="/edubuddy_full_logo.svg" alt="EduBuddy" style={{ display: "block", margin: "0 auto 1.5rem", maxWidth: "150px", width: "100%", height: "auto" }} initial={{ y: -12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} />
+        <Link href="/" aria-label="Back to EduBuddy landing page" style={{ display: "block", width: "fit-content", margin: "0 auto 1.5rem" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <motion.img src="/edubuddy_full_logo.svg" alt="EduBuddy" style={{ display: "block", maxWidth: "150px", width: "100%", height: "auto" }} initial={{ y: -12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} />
+        </Link>
         <h1 style={{ fontSize: "1.5rem", fontWeight: 800, textAlign: "center", color: "#111827", marginBottom: "0.35rem" }}>{title}</h1>
         <p style={{ textAlign: "center", color: "#6B7280", fontSize: "0.9rem", marginBottom: "1.75rem" }}>{subtitle}</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
