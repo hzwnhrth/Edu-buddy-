@@ -30,7 +30,7 @@ interface NavbarProps {
 export function Navbar({ onMenuToggle, role }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const title = pageTitles[pathname] ?? "EduBuddy AI";
+  const title = pathname === "/notes" && role === "student" ? "Study Materials" : pageTitles[pathname] ?? "EduBuddy AI";
 
   return (
     <header className="navbar">
