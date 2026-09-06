@@ -23,21 +23,22 @@ export function AppShell({ children }: AppShellProps) {
   const [ready, setReady] = useState(false);
   const [configurationError, setConfigurationError] = useState(false);
   const isAuthPage = pathname === "/login" || pathname === "/signup";
+  const isPublicPage = pathname === "/" || isAuthPage;
 
   useEffect(() => {
     try {
       return onAuthStateChanged(getFirebaseAuth(), (user) => {
         setReady(true);
-        if (!user && !isAuthPage) router.replace("/login");
+        if (!user && !isPublicPage) router.replace("/login");
         if (user && isAuthPage) router.replace("/dashboard");
       });
     } catch {
       setConfigurationError(true);
       setReady(true);
     }
-  }, [isAuthPage, router]);
+  }, [isAuthPage, isPublicPage, router]);
 
-  if (isAuthPage) {
+  if (isPublicPage) {
     return <>{children}</>;
   }
 
