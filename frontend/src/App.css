@@ -910,6 +910,7 @@ textarea.input-glass::placeholder {
 
   .main-content {
     margin-left: 0;
+    min-width: 0;
   }
 
   .navbar {

@@ -36,6 +36,8 @@ const statusMeta = {
   green: { color: '#22C55E', label: 'Mastering' },
 };
 
+const noAttemptsMeta = { color: '#9CA3AF', label: 'No attempts yet' };
+
 const strugglingStudents = [
   { id: 3, name: 'Wei Jie', topic: 'Chemical Bonding', score: '38%', lastActive: '1d ago' },
   { id: 7, name: 'Hafiz', topic: 'Cell Division (Mitosis)', score: '42%', lastActive: '2h ago' },
@@ -68,7 +70,7 @@ export default function TeacherDashboard() {
         id: s.id,
         name: s.name,
         gender: null,
-        mastery: s.mastery ?? 0,
+        mastery: s.mastery ?? null,
         status: s.status,
       }))
     : classroomData;
@@ -92,7 +94,11 @@ export default function TeacherDashboard() {
       </motion.div>
 
       {/* Top Stats */}
-      <motion.div className="stats-grid" variants={itemVariants}>
+      <motion.div
+        className="stats-grid"
+        variants={itemVariants}
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))' }}
+      >
         <div className="stat-card">
           <div className="stat-icon blue"><HiOutlineUserGroup /></div>
           <div className="stat-info">
@@ -120,7 +126,7 @@ export default function TeacherDashboard() {
       <motion.div className="card" variants={itemVariants} style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Classroom View</h2>
-          <div style={{ display: 'flex', gap: '1rem', fontSize: '0.85rem', fontWeight: 600 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', fontSize: '0.85rem', fontWeight: 600 }}>
             {Object.entries(statusMeta).map(([key, meta]) => (
               <span key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <div style={{ width: 12, height: 12, borderRadius: 4, background: meta.color }} /> {meta.label}
@@ -131,11 +137,12 @@ export default function TeacherDashboard() {
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(150px, 100%), 1fr))',
           gap: '1rem',
         }}>
           {roster.map((student) => {
-            const meta = statusMeta[student.status];
+            const hasAttempts = student.mastery !== null && student.mastery !== undefined;
+            const meta = hasAttempts ? statusMeta[student.status] : noAttemptsMeta;
             return (
               <motion.div
                 key={student.id}
@@ -148,12 +155,12 @@ export default function TeacherDashboard() {
                   textAlign: 'center',
                   cursor: 'pointer',
                 }}
-                title={`${student.name} - ${meta.label}, ${student.mastery}% mastery`}
+                title={`${student.name} - ${meta.label}${hasAttempts ? `, ${student.mastery}% mastery` : ''}`}
               >
                 {/* Mastery ring avatar */}
                 <div style={{
                   width: '72px', height: '72px', borderRadius: '50%', margin: '0 auto 0.6rem auto',
-                  background: `conic-gradient(${meta.color} ${student.mastery * 3.6}deg, #E5E7EB 0deg)`,
+                  background: `conic-gradient(${meta.color} ${hasAttempts ? student.mastery * 3.6 : 0}deg, #E5E7EB 0deg)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <div style={{
@@ -161,7 +168,7 @@ export default function TeacherDashboard() {
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   }}>
                     <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#111827', lineHeight: 1 }}>
-                      {student.mastery}%
+                      {hasAttempts ? `${student.mastery}%` : '-'}
                     </span>
                     <span style={{ fontSize: '0.55rem', fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       mastery
@@ -203,7 +210,7 @@ export default function TeacherDashboard() {
       {/* Weakness Analytics Table */}
       <motion.div className="card" variants={itemVariants}>
         <h2 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: '1.5rem' }}>Action Required: Student Weaknesses</h2>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', width: '100%', maxWidth: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #E5E7EB', color: '#6B7280', fontSize: '0.85rem', textTransform: 'uppercase' }}>

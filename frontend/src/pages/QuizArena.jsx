@@ -1,82 +1,154 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useAppContext } from '../context/AppContext';
-import { generateQuiz, gradeQuiz, analyzeText } from '../services/api';
-import { HiOutlineLightBulb, HiOutlineCheck, HiOutlineArrowRight, HiOutlineArrowPath, HiOutlineCheckCircle, HiOutlineXCircle, HiOutlineDocumentCheck } from 'react-icons/hi2';
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  HiOutlineArrowPath,
+  HiOutlineArrowRight,
+  HiOutlineBookOpen,
+  HiOutlineCheck,
+  HiOutlineCheckCircle,
+  HiOutlineLightBulb,
+  HiOutlineXCircle,
+} from 'react-icons/hi2';
+import { DECK_OPTIONS } from '../content/quiz-banks';
+import {
+  schedulesForBank,
+  saveSchedules,
+  deckDueCount,
+  buildSessionQuestions,
+  nextDueLabel,
+} from '../lib/quiz-bank';
 
 /**
  * QuizArena Component
- * Generates an AI quiz from the active study material (set by Study
- * Materials) or from pasted text, runs one-question-at-a-time with instant
- * feedback, then submits every answer to the backend for authoritative
- * grading and topic-level results.
+ * A self-contained spaced-repetition deck quiz. The student picks a chapter
+ * deck (or the mix of every chapter), answers one shuffled question at a
+ * time, and every answer feeds the SM-2-style scheduler of that chapter's
+ * pool: correct answers graduate the interval, wrong answers relearn the
+ * card in ten minutes. Schedules persist per bank in localStorage, and
+ * grading, scoring and the topic breakdown run fully client-side with no
+ * API calls and no route changes.
  */
+
+const SINGLE_DECK_COUNTS = [3, 5, 8, 10];
+const MIXED_DECK_COUNTS = [10, 20, 30, 40];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function verdictText(pct) {
+  if (pct >= 90) return 'Excellent!';
+  if (pct >= 70) return 'Great job!';
+  if (pct >= 50) return 'Good effort!';
+  return 'Keep practicing!';
+}
+
+function masteryPercent(mastery) {
+  return Math.round(mastery * 100);
+}
+
+// The rating step of the scheduler, kept local because the ported page only
+// imports from lib/quiz-bank; behavior mirrors the contract's spec exactly.
+function scheduleReview(card, rating, now = new Date()) {
+  const next = { ...card, lastReviewedAt: now.toISOString() };
+  if (rating === 'again') {
+    next.intervalDays = 0;
+    next.ease = Math.max(1.3, card.ease - 0.2);
+    next.repetitions = 0;
+    next.lapses += 1;
+    next.dueAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+    return next;
+  }
+
+  next.ease = Math.max(1.3, card.ease + (rating === 'easy' ? 0.15 : rating === 'hard' ? -0.15 : 0));
+
+  if (card.repetitions === 0) {
+    next.intervalDays = rating === 'easy' ? 4 : 1;
+  } else {
+    const multiplier = rating === 'hard' ? 1.2 : rating === 'easy' ? next.ease * 1.3 : next.ease;
+    next.intervalDays = Math.max(1, Math.round((card.intervalDays || 1) * multiplier));
+  }
+  next.repetitions += 1;
+  next.dueAt = new Date(now.getTime() + next.intervalDays * DAY_MS).toISOString();
+  return next;
+}
+
+function bankForQid(banks, qid) {
+  return banks.find((bank) => bank.questions.some((question) => question.qid === qid)) || null;
+}
+
+const weakBadgeStyle = {
+  padding: '0.2rem 0.6rem',
+  borderRadius: '9999px',
+  fontSize: '0.7rem',
+  fontWeight: 800,
+  background: '#FEF3C7',
+  color: '#D97706',
+  border: '1px solid rgba(245,158,11,0.2)',
+  flexShrink: 0,
+};
+
 export default function QuizArena() {
-  const { activeMaterialId, activeMaterialTitle, approvedNotes, setActiveMaterial, addQuizResult } = useAppContext();
+  const [selectedDeckId, setSelectedDeckId] = useState(DECK_OPTIONS[0].id);
+  const [numQuestions, setNumQuestions] = useState(10);
+  const [dueByDeck, setDueByDeck] = useState({});
   const [quiz, setQuiz] = useState(null);
-  const [difficulty, setDifficulty] = useState('medium');
-  const [numQuestions, setNumQuestions] = useState(5);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState([]);
   const [selectedOption, setSelectedOption] = useState(null);
+  const [activeBanks, setActiveBanks] = useState([]);
+  const [pools, setPools] = useState({});
   const [results, setResults] = useState(null);
   const [showExplanation, setShowExplanation] = useState(false);
-  const [error, setError] = useState('');
-  const [textInput, setTextInput] = useState('');
-  const [loading, setLoading] = useState(false);
 
-  const handleStart = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      let materialId = activeMaterialId;
-      let title = activeMaterialTitle || 'Study Material';
+  const selectedDeck = DECK_OPTIONS.find((option) => option.id === selectedDeckId) || DECK_OPTIONS[0];
+  const deckQuestionCount = selectedDeck.banks.reduce((total, bank) => total + bank.questions.length, 0);
+  const countChoices = deckQuestionCount > 10 ? MIXED_DECK_COUNTS : SINGLE_DECK_COUNTS;
 
-      if (!materialId) {
-        if (!textInput.trim()) {
-          setError('Please open a study material first (from the Study Materials page) or paste content below.');
-          setLoading(false);
-          return;
-        }
-        const data = await analyzeText('Pasted Text', textInput);
-        materialId = data.material.id;
-        title = 'Pasted Text';
+  // Due counts come from localStorage (an external system), so the effect
+  // reads it asynchronously and refreshes whenever the start screen comes
+  // back into view (quiz and results both cleared).
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const counts = {};
+      for (const option of DECK_OPTIONS) {
+        counts[option.id] = option.banks.reduce((total, bank) => total + deckDueCount(bank), 0);
       }
+      setDueByDeck(counts);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [quiz, results]);
 
-      let data;
-      try {
-        data = await generateQuiz(materialId, difficulty, numQuestions);
-      } catch (quizErr) {
-        // The backend's memory store resets on restart, so a material id
-        // saved in this browser can go stale. Re-register the approved
-        // notes as a fresh material and retry once.
-        const approved = approvedNotes.find(a => a.material?.id === materialId);
-        if (!approved || !/not found/i.test(quizErr.message)) {
-          throw quizErr;
-        }
-        const sections = (approved.notes?.sections || []).map(s => `${s.heading}\n${s.content}`).join('\n\n');
-        const extras = [approved.notes?.summary, ...(approved.notes?.keyPoints || [])].filter(Boolean).join('\n');
-        const text = [sections, extras].filter(Boolean).join('\n\n');
-        const reanalyzed = await analyzeText(approved.material?.title || 'Study Material', text);
-        setActiveMaterial(reanalyzed.material.id, reanalyzed.material.title);
-        materialId = reanalyzed.material.id;
-        title = reanalyzed.material.title;
-        data = await generateQuiz(materialId, difficulty, numQuestions);
-      }
-
-      setQuiz({ ...data.quiz, _title: title, _difficulty: difficulty });
-      setCurrentQ(0);
-      setAnswers([]);
-      setSelectedOption(null);
-      setResults(null);
-      setShowExplanation(false);
-    } catch (err) {
-      setError(/not found/i.test(err.message)
-        ? 'This material is no longer on the server (it restarted). Ask your teacher to re-publish it, or paste the notes below.'
-        : err.message);
-    } finally {
-      setLoading(false);
+  const handleSelectDeck = (deckId) => {
+    setSelectedDeckId(deckId);
+    const option = DECK_OPTIONS.find((entry) => entry.id === deckId);
+    const available = option ? option.banks.reduce((total, bank) => total + bank.questions.length, 0) : 10;
+    const choices = available > 10 ? MIXED_DECK_COUNTS : SINGLE_DECK_COUNTS;
+    if (!choices.includes(numQuestions)) {
+      setNumQuestions(choices.includes(10) ? 10 : choices[0]);
     }
+  };
+
+  const handleStart = () => {
+    const deck = DECK_OPTIONS.find((option) => option.id === selectedDeckId) || DECK_OPTIONS[0];
+    const loaded = {};
+    for (const bank of deck.banks) {
+      loaded[bank.id] = schedulesForBank(bank);
+    }
+    const questions = buildSessionQuestions(deck.banks, loaded, numQuestions);
+    setActiveBanks(deck.banks);
+    setPools(loaded);
+    setQuiz({
+      id: `${deck.id}-${Date.now()}`,
+      materialId: deck.id,
+      topicIds: deck.banks.map((bank) => bank.topicId),
+      difficulty: 'medium',
+      questions,
+      createdAt: new Date().toISOString(),
+    });
+    setCurrentQ(0);
+    setAnswers([]);
+    setSelectedOption(null);
+    setResults(null);
+    setShowExplanation(false);
   };
 
   const handleSelectOption = (index) => {
@@ -84,61 +156,75 @@ export default function QuizArena() {
     setSelectedOption(index);
   };
 
-  const handleNext = async () => {
-    if (selectedOption === null) return;
-
-    const newAnswers = [...answers];
-    newAnswers[currentQ] = selectedOption;
-    setAnswers(newAnswers);
-
-    if (currentQ < quiz.questions.length - 1) {
-      setCurrentQ(prev => prev + 1);
-      setSelectedOption(null);
-      setShowExplanation(false);
-    } else {
-      setLoading(true);
-      try {
-        const payload = quiz.questions.map((q, i) => ({
-          qid: q.qid,
-          chosenIndex: newAnswers[i],
-        }));
-        const graded = await gradeQuiz(quiz.id, payload);
-
-        const correctCount = graded.results.filter(r => r.correct).length;
-        const total = quiz.questions.length;
-        const percentage = Math.round((graded.attempt.score || 0) * 100);
-        const weakTopics = (graded.topicResults || []).filter(t => t.weak).map(t => t.name);
-
-        const attemptResult = {
-          ...graded,
-          percentage,
-          score: correctCount,
-          total,
-          feedback: weakTopics.length > 0
-            ? `Focus next on: ${weakTopics.join(', ')}.`
-            : 'Strong work across every topic in this quiz.',
-        };
-
-        setResults(attemptResult);
-        addQuizResult({
-          topic: quiz._title,
-          difficulty: quiz._difficulty,
-          score: correctCount,
-          total,
-          percentage,
-          timestamp: Date.now(),
-        });
-        setQuiz(null);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
   const handleCheckAnswer = () => {
     setShowExplanation(true);
+  };
+
+  const handleNext = () => {
+    if (selectedOption === null || !quiz) return;
+
+    const question = quiz.questions[currentQ];
+    const correct = selectedOption === question.correctAnswerIndex;
+    const bank = bankForQid(activeBanks, question.qid);
+    if (bank) {
+      const updatedPool = (pools[bank.id] ?? []).map((entry) => (
+        entry.cardId === question.qid ? scheduleReview(entry, correct ? 'good' : 'again') : entry
+      ));
+      setPools((previous) => ({ ...previous, [bank.id]: updatedPool }));
+      saveSchedules(bank.id, updatedPool);
+    }
+
+    const newAnswers = [...answers, selectedOption];
+
+    if (currentQ < quiz.questions.length - 1) {
+      setAnswers(newAnswers);
+      setCurrentQ(currentQ + 1);
+      setSelectedOption(null);
+      setShowExplanation(false);
+      return;
+    }
+
+    const correctCount = newAnswers.filter((answer, index) => answer === quiz.questions[index].correctAnswerIndex).length;
+    const score = correctCount / quiz.questions.length;
+
+    // One topic card per chapter that actually contributed questions, with
+    // this session's correct/total on it.
+    const topicCards = activeBanks
+      .map((entry) => {
+        const indexes = quiz.questions
+          .map((q, index) => ({ q, index }))
+          .filter(({ q }) => bankForQid(activeBanks, q.qid)?.id === entry.id)
+          .map(({ index }) => index);
+        const bankCorrect = indexes.filter((index) => newAnswers[index] === quiz.questions[index].correctAnswerIndex).length;
+        const total = indexes.length;
+        return {
+          topicName: entry.topicName,
+          correct: bankCorrect,
+          total,
+          weak: total >= 3 && bankCorrect / total < 0.6,
+        };
+      })
+      .filter((card) => card.total > 0);
+
+    // Read from the pools captured in this render, so the final answer's
+    // schedule update (queued above) contributes its pre-review due date.
+    const allSchedules = Object.values(pools).flat();
+
+    setAnswers(newAnswers);
+    setResults({
+      score,
+      results: quiz.questions.map((entry, index) => ({
+        qid: entry.qid,
+        stem: entry.stem,
+        options: entry.options,
+        chosenIndex: newAnswers[index],
+        correct: newAnswers[index] === entry.correctAnswerIndex,
+        correctAnswerIndex: entry.correctAnswerIndex,
+        explanation: entry.explanation,
+      })),
+      topicCards,
+      nextDue: nextDueLabel(allSchedules),
+    });
   };
 
   const resetQuiz = () => {
@@ -150,70 +236,65 @@ export default function QuizArena() {
     setShowExplanation(false);
   };
 
-  const difficultyConfig = {
-    easy: { label: 'Easy', color: '#22C55E', bg: '#DCFCE7' },
-    medium: { label: 'Medium', color: '#F59E0B', bg: '#FEF3C7' },
-    hard: { label: 'Hard', color: '#EF4444', bg: '#FEE2E2' },
-  };
-
   // Start Screen
-  if (!quiz && !loading && !results) {
+  if (!quiz && !results) {
     return (
       <motion.div className="page-container" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <div className="page-header" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
           <h1>Quiz Arena</h1>
-          <p>Test your knowledge with AI-generated quizzes. Choose your difficulty!</p>
+          <p>Pick a chapter deck and practise with spaced repetition, Anki-style.</p>
         </div>
 
         <div style={{ maxWidth: '550px', margin: '0 auto' }}>
-          {activeMaterialId ? (
-            <motion.div className="card" style={{ marginBottom: '1.5rem', padding: '0.85rem 1.25rem', border: '1px solid rgba(34,197,94,0.3)', background: '#DCFCE7' }} initial={{ y: 16 }} animate={{ y: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#16A34A', fontSize: '0.85rem', fontWeight: 700 }}>
-                <HiOutlineDocumentCheck /> Quiz source: {activeMaterialTitle || 'Study material'} (teacher approved)
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div className="card" style={{ marginBottom: '1.25rem', padding: '1.5rem' }} initial={{ y: 16 }} animate={{ y: 0 }}>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.6rem', color: '#111827' }}>Paste your study content</h3>
-              <textarea
-                className="input-glass"
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Paste your study material here to generate a quiz..."
-                style={{ minHeight: '110px' }}
-              />
-              <p style={{ fontSize: '0.8rem', color: '#9CA3AF', marginTop: '0.6rem' }}>
-                Tip: Open a material from the Study Materials page - it will be automatically used here.
-              </p>
-            </motion.div>
-          )}
-
-          <motion.div className="card" style={{ padding: '2rem' }} initial={{ y: 16 }} animate={{ y: 0 }} transition={{ delay: 0.1 }}>
-            <div style={{ marginBottom: '1.75rem' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.85rem', textAlign: 'center', color: '#111827' }}>Select Difficulty</h3>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
-                {['easy', 'medium', 'hard'].map(d => (
+          <motion.div className="card" style={{ padding: '2rem' }} initial={{ y: 16 }} animate={{ y: 0 }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.85rem', color: '#111827' }}>Select a topic deck</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.75rem' }}>
+              {DECK_OPTIONS.map((deck) => {
+                const selected = deck.id === selectedDeckId;
+                const total = deck.banks.reduce((sum, bank) => sum + bank.questions.length, 0);
+                const due = dueByDeck[deck.id] ?? total;
+                const isMix = deck.banks.length > 1;
+                return (
                   <button
-                    key={d}
+                    key={deck.id}
+                    type="button"
+                    onClick={() => handleSelectDeck(deck.id)}
                     style={{
-                      flex: 1,
-                      padding: '0.65rem 1rem',
-                      borderRadius: '12px',
-                      fontSize: '0.9rem',
-                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.85rem',
+                      padding: '1rem 1.1rem',
+                      borderRadius: '14px',
                       cursor: 'pointer',
-                      border: difficulty === d ? `2px solid ${difficultyConfig[d].color}` : '2px solid #E5E7EB',
-                      background: difficulty === d ? difficultyConfig[d].bg : '#FFFFFF',
-                      color: difficulty === d ? difficultyConfig[d].color : '#6B7280',
+                      textAlign: 'left',
                       fontFamily: 'inherit',
+                      border: selected ? '2px solid #22C55E' : '2px solid #E5E7EB',
+                      background: selected ? '#F0FDF4' : '#FFFFFF',
                       transition: '0.2s ease',
                     }}
-                    onClick={() => setDifficulty(d)}
                   >
-                    {difficultyConfig[d].label}
+                    <span style={{ fontSize: '1.35rem', color: isMix ? '#8B5CF6' : selected ? '#16A34A' : '#9CA3AF', flexShrink: 0 }}>
+                      <HiOutlineBookOpen />
+                    </span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#9CA3AF' }}>
+                        {deck.subject}
+                      </span>
+                      <span style={{ display: 'block', fontWeight: 700, fontSize: '0.95rem', color: '#111827' }}>
+                        {deck.title}
+                      </span>
+                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#6B7280' }}>
+                        {total} questions · {due} due for review
+                      </span>
+                    </span>
+                    {selected && (
+                      <span style={{ fontSize: '1.25rem', color: '#16A34A', flexShrink: 0 }}>
+                        <HiOutlineCheckCircle />
+                      </span>
+                    )}
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
 
             <div style={{ marginBottom: '1.75rem', textAlign: 'center' }}>
@@ -227,28 +308,29 @@ export default function QuizArena() {
                   padding: '0.6rem 1.25rem', borderRadius: '9999px',
                   background: '#F9FAFB', border: '1px solid #E5E7EB',
                   color: '#111827', fontFamily: 'inherit', fontSize: '0.9rem', outline: 'none',
-                  fontWeight: 600, cursor: 'pointer'
+                  fontWeight: 600, cursor: 'pointer',
                 }}
               >
-                {[3, 5, 8, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                {countChoices.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {error && (
-              <div style={{ color: '#EF4444', textAlign: 'center', margin: '0.75rem 0', fontSize: '0.9rem', fontWeight: 600, background: '#FEE2E2', padding: '0.75rem', borderRadius: '10px' }}>
-                ⚠️ {error}
-              </div>
-            )}
-
             <div style={{ textAlign: 'center' }}>
               <button
+                type="button"
                 className="btn btn-primary"
                 style={{ padding: '0.85rem 2.5rem', fontSize: '1rem', borderRadius: '9999px', width: '100%' }}
                 onClick={handleStart}
-                disabled={!activeMaterialId && !textInput.trim()}
               >
                 <HiOutlineLightBulb /> Start Quiz
               </button>
+              <p style={{ fontSize: '0.78rem', color: '#9CA3AF', marginTop: '0.6rem' }}>
+                Questions and answers are shuffled every round. Reviews are scheduled with spaced repetition.
+              </p>
             </div>
           </motion.div>
         </div>
@@ -256,27 +338,9 @@ export default function QuizArena() {
     );
   }
 
-  // Loading
-  if (loading) {
-    return (
-      <div className="page-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <motion.div className="card" style={{ textAlign: 'center', padding: '3.5rem 2.5rem' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-          <div className="loading-spinner" style={{ margin: '0 auto 1.5rem auto' }} />
-          <h3 style={{ fontSize: '1.15rem', marginBottom: '0.35rem', color: '#111827' }}>Generating your quiz...</h3>
-          <p style={{ color: '#6B7280' }}>Creating {numQuestions} {difficulty} questions</p>
-        </motion.div>
-      </div>
-    );
-  }
-
   // Results
   if (results) {
-    const getResultText = (pct) => {
-      if (pct >= 90) return 'Excellent!';
-      if (pct >= 70) return 'Great job!';
-      if (pct >= 50) return 'Good effort!';
-      return 'Keep practicing!';
-    };
+    const pct = masteryPercent(results.score);
 
     return (
       <motion.div className="page-container" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -288,35 +352,26 @@ export default function QuizArena() {
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: 'spring', stiffness: 100, damping: 15 }}
             >
-              <div className="score-value">{results.percentage}%</div>
-              <div className="score-label">{results.score}/{results.total}</div>
+              <div className="score-value">{pct}%</div>
+              <div className="score-label">{results.results.filter((r) => r.correct).length}/{results.results.length}</div>
             </motion.div>
 
             <h2 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.5rem', color: '#111827' }}>
-              {getResultText(results.percentage)}
+              {verdictText(pct)}
             </h2>
-            <p style={{ color: '#6B7280', fontSize: '0.95rem' }}>{results.feedback}</p>
+            <p style={{ color: '#6B7280', fontSize: '0.95rem' }}>
+              You answered {results.results.filter((r) => r.correct).length} of {results.results.length} questions correctly.
+            </p>
+            <p style={{ color: '#9CA3AF', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+              Next review: {results.nextDue}
+            </p>
 
-            {results.topicResults?.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', marginTop: '1.25rem' }}>
-                {results.topicResults.map((t, i) => (
-                  <span
-                    key={i}
-                    style={{
-                      padding: '0.35rem 0.85rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: 700,
-                      background: t.weak ? '#FEE2E2' : '#DCFCE7',
-                      color: t.weak ? '#DC2626' : '#16A34A',
-                    }}
-                  >
-                    {t.name} - {t.correct}/{t.total}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '1.5rem' }}>
-              <button className="btn btn-primary" onClick={resetQuiz} style={{ borderRadius: '9999px' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-secondary" onClick={resetQuiz} style={{ borderRadius: '9999px' }}>
                 <HiOutlineArrowPath /> Try Again
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleStart} style={{ borderRadius: '9999px' }}>
+                <HiOutlineArrowPath /> Practise bank again
               </button>
             </div>
           </div>
@@ -324,7 +379,7 @@ export default function QuizArena() {
           <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '1rem', color: '#6B7280' }}>Detailed Results</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {results.results.map((r, i) => (
-              <motion.div key={i} className="card" style={{ padding: '1.25rem' }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+              <motion.div key={r.qid} className="card" style={{ padding: '1.25rem' }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
                   <span style={{ fontSize: '1.35rem', marginTop: '-0.15rem', color: r.correct ? '#22C55E' : '#EF4444' }}>
                     {r.correct ? <HiOutlineCheckCircle /> : <HiOutlineXCircle />}
@@ -333,30 +388,80 @@ export default function QuizArena() {
                     <p style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.6rem', color: '#111827' }}>{r.stem}</p>
                     {!r.correct && (
                       <div style={{ padding: '0.6rem 0.85rem', background: '#FEE2E2', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', marginBottom: '0.4rem', color: '#6B7280', fontSize: '0.85rem' }}>
-                        <strong style={{ color: '#EF4444' }}>Your answer:</strong> {r.options?.[r.chosenIndex]}
+                        <strong style={{ color: '#EF4444' }}>Your answer:</strong> {r.options[r.chosenIndex] ?? ''}
                       </div>
                     )}
                     <div style={{ padding: '0.6rem 0.85rem', background: '#DCFCE7', border: '1px solid rgba(34,197,94,0.2)', borderRadius: '8px', marginBottom: '0.75rem', color: '#6B7280', fontSize: '0.85rem' }}>
-                      <strong style={{ color: '#16A34A' }}>Correct:</strong> {r.options?.[r.answerIndex]}
+                      <strong style={{ color: '#16A34A' }}>Correct:</strong> {r.options[r.correctAnswerIndex] ?? ''}
                     </div>
-                    {r.explanation && (
+                    {r.explanation ? (
                       <div style={{ fontSize: '0.85rem', color: '#6B7280', lineHeight: 1.6 }}>
                         {r.explanation}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </motion.div>
             ))}
+          </div>
+
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: '1.75rem 0 1rem 0', color: '#6B7280' }}>Topics</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            {results.topicCards.map((topic, i) => {
+              const topicPct = masteryPercent(topic.total > 0 ? topic.correct / topic.total : 0);
+              return (
+                <motion.div key={topic.topicName} className="card" style={{ padding: '1.25rem' }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '0.75rem' }}>
+                    <p style={{ flex: 1, fontWeight: 700, fontSize: '0.95rem', color: '#111827' }}>{topic.topicName}</p>
+                    <span style={{ fontSize: '0.85rem', color: '#6B7280', fontWeight: 600 }}>
+                      {topic.correct}/{topic.total}
+                    </span>
+                    {topic.weak && <span style={weakBadgeStyle}>Weak</span>}
+                  </div>
+                  <div
+                    role="progressbar"
+                    aria-valuenow={topicPct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${topic.topicName} mastery`}
+                    style={{ height: '8px', background: '#E5E7EB', borderRadius: '9999px', overflow: 'hidden' }}
+                  >
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${topicPct}%`,
+                        background: topic.weak ? '#F59E0B' : '#22C55E',
+                        borderRadius: '9999px',
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </motion.div>
     );
   }
 
-  // Quiz in progress
+  // Quiz in progress. The empty guard keeps the view safe if a deck ever
+  // arrives without questions.
+  if (!quiz || quiz.questions.length === 0) {
+    return (
+      <div className="page-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div className="card" style={{ textAlign: 'center', padding: '3.5rem 2.5rem' }}>
+          <h3 style={{ fontSize: '1.15rem', marginBottom: '0.35rem', color: '#111827' }}>This quiz has no questions.</h3>
+          <button type="button" className="btn btn-secondary" onClick={resetQuiz} style={{ borderRadius: '9999px', marginTop: '0.75rem' }}>
+            <HiOutlineArrowPath /> Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const question = quiz.questions[currentQ];
   const progress = ((currentQ + 1) / quiz.questions.length) * 100;
+  const correctIndex = question.correctAnswerIndex;
 
   return (
     <div className="page-container">
@@ -368,7 +473,7 @@ export default function QuizArena() {
               style={{ height: '100%', background: 'linear-gradient(90deg, #22C55E, #3B82F6)', borderRadius: '9999px' }}
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4, ease: "easeOut" }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
             />
           </div>
           <div style={{ fontWeight: 700, color: '#6B7280', fontSize: '0.9rem' }}>
@@ -395,7 +500,7 @@ export default function QuizArena() {
                 let className = 'quiz-option';
 
                 if (showExplanation) {
-                  if (i === question.correctAnswerIndex) {
+                  if (correctIndex !== undefined && i === correctIndex) {
                     className += ' correct';
                   } else if (i === selectedOption) {
                     className += ' incorrect';
@@ -409,6 +514,7 @@ export default function QuizArena() {
                     whileHover={!showExplanation ? { scale: 1.01 } : {}}
                     whileTap={!showExplanation ? { scale: 0.99 } : {}}
                     key={i}
+                    type="button"
                     className={className}
                     onClick={() => handleSelectOption(i)}
                   >
@@ -422,7 +528,7 @@ export default function QuizArena() {
             </div>
 
             <AnimatePresence>
-              {showExplanation && question.explanation && (
+              {showExplanation && question.explanation ? (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -433,12 +539,13 @@ export default function QuizArena() {
                     {question.explanation}
                   </p>
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
 
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.75rem' }}>
               {!showExplanation ? (
                 <button
+                  type="button"
                   className="btn btn-secondary"
                   onClick={handleCheckAnswer}
                   disabled={selectedOption === null}
@@ -448,6 +555,7 @@ export default function QuizArena() {
                 </button>
               ) : null}
               <button
+                type="button"
                 className="btn btn-primary"
                 onClick={handleNext}
                 disabled={selectedOption === null}
